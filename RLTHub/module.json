@@ -1,0 +1,15 @@
+{
+  "id": "{19C33A5B-8C10-45F5-9A33-9928D9005B69}",
+  "name": "RLTHub",
+  "type": 3,
+  "vendor": "",
+  "aliases": [
+    "NRG-Stack RLTHub",
+    "Lüftungsanlage / RLT (Multi-Hersteller)"
+  ],
+  "url": "https://github.com/DG65/NRGRLTHub",
+  "parentRequirements": [],
+  "childRequirements": [],
+  "implemented": [],
+  "prefix": "RLT"
+}

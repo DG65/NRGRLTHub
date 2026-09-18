@@ -1,0 +1,12 @@
+{
+  "id": "{C45A5F38-EE54-431C-97E2-D3C8012B4E94}",
+  "author": "DG65",
+  "name": "NRG-Stack RLTHub",
+  "url": "https://github.com/DG65/NRGRLTHub",
+  "compatibility": {
+    "version": "9.0"
+  },
+  "version": "0.1.0",
+  "build": 1,
+  "date": 1789776000
+}
