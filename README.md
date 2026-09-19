@@ -1,44 +1,43 @@
 # NRG-Stack RLTHub
 
-Generisches Modbus-TCP-Framework für Raumlufttechnische Anlagen (RLT/KWL),
-herstellerübergreifend — analog zu [NRGMeterHub](https://github.com/DG65/NRGMeterHub),
-[NRGInverterHub](https://github.com/DG65/NRGInverterHub) und
-[NRGChargerHub](https://github.com/DG65/NRGChargerHub). Teil des
-[NRG-Stack](https://github.com/DG65) für IP-Symcon.
+Raumlufttechnische Anlagen (RLT/KWL) für IP-Symcon, herstellerübergreifend — analog zu
+[NRGMeterHub](https://github.com/DG65/NRGMeterHub), [NRGInverterHub](https://github.com/DG65/NRGInverterHub)
+und [NRGChargerHub](https://github.com/DG65/NRGChargerHub). Teil des NRG-Stack.
 
 ## Status
 
-**0.1.0 — Architektur-Skelett (Kickoff 19.09.2026), noch ohne echte Hardware
-verifiziert.** Enthält:
+**0.2.0 — noch an keiner echten Anlage verifiziert.** Alle Prüfungen laufen gegen Test-Modbus-Server
+und einen IPSModule-Nachbau; die Registerkarten und Skalierungen sind im Formular und im Quellcode
+mit ihrem Verifikationsstand markiert.
 
-- Geteilte Modbus-Verbindungsfassade (direkt per `fsockopen` ODER über
-  Symcons natives Modbus-Gateway/eingebauter Symbox-RS485-Port), 1:1 aus
-  MeterHub/InverterHub/ChargerHub übernommen statt neu erforscht.
-- Ersten Treiber: **Robatherm TrueControl** — Registeradressen stammen aus
-  einer einzelnen, konkreten Anlagenkonfiguration (siehe Warnhinweise im
-  Konfigurationsformular und im Treiber-Quellcode). Vor Produktiveinsatz an
-  einer anderen Anlage unbedingt gegen deren eigene Modbus-Datenpunktliste
-  prüfen.
-- Den mit dem EMS abgestimmten Cross-Modul-Vertrag `Type=>'ventilation'`
-  (`RLT_GetFunctions`, contractVersion 1.0) — das EMS ist aktuell reine
-  Konsument-Rolle, rein lesend.
+## Module
 
-Noch **nicht** umgesetzt: die verbundweite Formular-Konvention (News-/Doku-/
-Forum-Panel, siehe `SUITE.md`), Schreibzugriff auf die Sollwerte, weitere
-Hersteller-Treiber.
+| Modul | Zweck |
+|---|---|
+| `RLTHub` | Modbus TCP (eigene Verbindung). |
+| `RLTHubGateway` | RS485/Modbus RTU über Symcons natives ModBus-Gateway (Kind-Modul mit `parentRequirements`, Muster von WPModbusHubGateway, dort an echter Hardware bestätigt). Die Slave-ID steht am Gateway. |
+| `RLTHubDiscovery` | Sucht Modbus-TCP-Anlagen im Netz (rein lesend) und legt `RLTHub`-Instanzen an. RTU-Geräte sind nicht suchbar; die Suche listet vorhandene Gateways auf. |
+
+## Gerätetypen
+
+| Gerätetyp | Transport | Stand |
+|---|---|---|
+| Robatherm TrueControl | TCP | Registerliste einer einzelnen Anlage (TrueControl wird je Projekt parametriert), Skalierung und Adress-Basis unverifiziert |
+| Proxon FWT 2.0 (Zimmermann) | RTU | Registerliste der Herstellerdoku, Temperaturskalierung unter 0 °C offen |
+
+## Cross-Modul-Vertrag
+
+`RLT_GetFunctions($id)` / `RLTGW_GetFunctions($id)` liefert `Type=>'ventilation'`, `contractVersion 1.0`
+(mit dem EMS abgestimmt, siehe SUITE.md). Felder, die ein Gerät nicht liefert, stehen auf 0. Rein
+lesend — keine aktive Steuerung.
 
 ## Prüfstand
 
 ```
-php .tools/test-robatherm-driver.php    # 0 = alle Prüfungen bestanden
+php .tools/test-rlthub.php    # 0 = alle Prüfungen bestanden
 ```
-
-Prüft die Modbus-Fassade (direkt + Gateway, echter TCP-Server in einem
-eigenen Prozess) und den Robatherm-Treiber (Register-Dekodierung,
-WRG-Wirkungsgrad-Berechnung, Fehlerfälle) ohne IP-Symcon.
 
 ## Lizenz
 
-PolyForm Noncommercial License 1.0.0 — siehe [LICENSE](LICENSE). Private und
-nicht-kommerzielle Nutzung frei, gewerbliche Nutzung erfordert eine
-gesonderte Lizenz vom Rechteinhaber (DG65).
+PolyForm Noncommercial License 1.0.0 — siehe [LICENSE](LICENSE). Private und nicht-kommerzielle Nutzung
+frei, gewerbliche Nutzung erfordert eine gesonderte Lizenz vom Rechteinhaber (DG65).

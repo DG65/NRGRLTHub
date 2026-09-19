@@ -1,12 +1,19 @@
 # Changelog
 
+## 0.2.0 (19.09.2026)
+
+- **Fix:** `IPS_GetObjectIDByIdent()` wurde mit vertauschten Argumenten aufgerufen — die Variablen
+  wären nie gefunden und nie beschrieben worden (0.1.0 war damit nicht lauffähig).
+- Neu: `RLTHubGateway` — Kind-Modul für Symcons natives ModBus-Gateway (RS485/RTU). Der in 0.1.0
+  angebotene Verbindungsweg „Symbox-Gateway" im Hauptmodul funktionierte mangels Parent nicht und
+  entfällt; `RLTHub` ist reines Modbus TCP.
+- Neu: Treiber Proxon FWT 2.0 (nur RTU, unverifiziert).
+- Neu: `RLTHubDiscovery` — Netzwerksuche nach Modbus-TCP-Anlagen, legt `RLTHub`-Instanzen an.
+- Adress-Basis je Gerätetyp („automatisch") statt fester Annahme, Formularschalter bleibt.
+- Gemeinsamer Kern in `libs/RLTCore.php`; Gateway-Client überspringt den Rest des Zyklus, wenn das
+  Gerät zweimal in Folge nicht antwortet.
+- Prüfstand `.tools/test-rlthub.php` (gegen IPSModule-Nachbau mit den echten Signaturen).
+
 ## 0.1.0 (19.09.2026)
 
-- Architektur-Skelett: geteilte Modbus-Verbindungsfassade (direkt/Symbox-Gateway)
-  1:1 aus MeterHub/InverterHub/ChargerHub übernommen (SUITE.md 9j).
-- Erster Treiber: Robatherm TrueControl (Messwerte, Sammelstörung, Watchdog-
-  Diagnose) — Registeradressen aus einer einzelnen Anlagenkonfiguration,
-  noch ohne echte Hardware verifiziert.
-- Cross-Modul-Vertrag `Type=>'ventilation'` (`RLT_GetFunctions`,
-  contractVersion 1.0), mit dem EMS abgestimmt.
-- Prüfstand `.tools/test-robatherm-driver.php`.
+- Architektur-Skelett, Treiber Robatherm TrueControl, Vertrag `Type=>'ventilation'` 1.0.

@@ -1,0 +1,409 @@
+<?php
+/**
+ * Prüfstand RLTHub: Modbus-Fassade (TCP + Gateway), beide Treiber (Robatherm
+ * TrueControl, Proxon FWT), die Module RLTHub/RLTHubGateway/RLTHubDiscovery
+ * gegen einen IPSModule-Nachbau mit den ECHTEN Signaturen (Argumentreihenfolge
+ * z. B. bei IPS_GetObjectIDByIdent) und die Netzwerksuche gegen echte
+ * Test-Modbus-Server.
+ *
+ *   php .tools/test-rlthub.php    # 0 = alle Prüfungen bestanden
+ *
+ * Anlass der Modul-Nachbildung: In 0.1.0 waren die Argumente von
+ * IPS_GetObjectIDByIdent() vertauscht — die damaligen Prüfungen nutzten einen
+ * Fake-Hub und konnten das nicht sehen.
+ */
+
+foreach (['VARIABLETYPE_BOOLEAN' => 0, 'VARIABLETYPE_INTEGER' => 1, 'VARIABLETYPE_FLOAT' => 2, 'VARIABLETYPE_STRING' => 3] as $c => $v) {
+    if (!defined($c)) { define($c, $v); }
+}
+
+// ---------------------------------------------------------------------------
+// IP-Symcon-Nachbau (nur, was RLTHub braucht; Signaturen wie im echten IPS)
+// ---------------------------------------------------------------------------
+$GLOBALS['RLT_OBJ'] = [];        // objectID => ['ident','parent','type','value','profile','name']
+$GLOBALS['RLT_NEXT'] = 1000;
+$GLOBALS['RLT_PROFILES'] = [];
+$GLOBALS['RLT_INSTANCES'] = [];  // instanceID => ['ConnectionID'=>int, 'module'=>guid, 'props'=>[]]
+
+function IPS_GetObjectIDByIdent($ident, $parentId)
+{
+    foreach ($GLOBALS['RLT_OBJ'] as $id => $o) {
+        if ($o['parent'] === $parentId && $o['ident'] === $ident) { return $id; }
+    }
+    trigger_error('Objekt #' . $parentId . '/' . $ident . ' nicht gefunden', E_USER_WARNING);
+    return false;
+}
+function SetValueFloat($id, $v) { $GLOBALS['RLT_OBJ'][$id]['value'] = (float)$v; return true; }
+function SetValueInteger($id, $v) { $GLOBALS['RLT_OBJ'][$id]['value'] = (int)$v; return true; }
+function SetValueBoolean($id, $v) { $GLOBALS['RLT_OBJ'][$id]['value'] = (bool)$v; return true; }
+function IPS_VariableProfileExists($n) { return isset($GLOBALS['RLT_PROFILES'][$n]); }
+function IPS_CreateVariableProfile($n, $t) { $GLOBALS['RLT_PROFILES'][$n] = ['type' => $t]; }
+function IPS_SetVariableProfileDigits($n, $d) { $GLOBALS['RLT_PROFILES'][$n]['digits'] = $d; }
+function IPS_SetVariableProfileText($n, $p, $s) { $GLOBALS['RLT_PROFILES'][$n]['suffix'] = $s; }
+function IPS_SetVariableProfileIcon($n, $i) { $GLOBALS['RLT_PROFILES'][$n]['icon'] = $i; }
+function IPS_GetInstanceListByModuleID($guid)
+{
+    $out = [];
+    foreach ($GLOBALS['RLT_INSTANCES'] as $id => $i) { if (($i['module'] ?? '') === $guid) { $out[] = $id; } }
+    return $out;
+}
+function IPS_GetName($id) { return 'Instanz ' . $id; }
+function IPS_GetInstance($id) { return ['ConnectionID' => $GLOBALS['RLT_INSTANCES'][$id]['ConnectionID'] ?? 0]; }
+function IPS_InstanceExists($id) { return isset($GLOBALS['RLT_INSTANCES'][$id]); }
+function IPS_GetProperty($id, $name) { return $GLOBALS['RLT_INSTANCES'][$id]['props'][$name] ?? null; }
+
+class IPSModule
+{
+    public $InstanceID;
+    public $props = [];
+    public $attrs = [];
+    public $status = 0;
+    public $timers = [];
+    public $formUpdates = [];
+    /** @var callable|null */
+    public $parentFn = null;
+    public function __construct($id = 0) { $this->InstanceID = $id; }
+    public function Create() {}
+    public function ApplyChanges() {}
+    public function RegisterPropertyString($n, $v) { $this->props[$n] = $v; }
+    public function RegisterPropertyBoolean($n, $v) { $this->props[$n] = $v; }
+    public function RegisterPropertyInteger($n, $v) { $this->props[$n] = $v; }
+    public function ReadPropertyString($n) { return (string)$this->props[$n]; }
+    public function ReadPropertyBoolean($n) { return (bool)$this->props[$n]; }
+    public function ReadPropertyInteger($n) { return (int)$this->props[$n]; }
+    public function RegisterAttributeInteger($n, $v) { $this->attrs[$n] = $v; }
+    public function RegisterAttributeString($n, $v) { $this->attrs[$n] = $v; }
+    public function ReadAttributeInteger($n) { return (int)$this->attrs[$n]; }
+    public function ReadAttributeString($n) { return (string)$this->attrs[$n]; }
+    public function WriteAttributeInteger($n, $v) { $this->attrs[$n] = $v; }
+    public function WriteAttributeString($n, $v) { $this->attrs[$n] = $v; }
+    public function RegisterTimer($n, $i, $s) { $this->timers[$n] = ['interval' => $i, 'script' => $s]; }
+    public function SetTimerInterval($n, $i) { $this->timers[$n]['interval'] = $i; }
+    public function SetStatus($s) { $this->status = $s; }
+    public function GetStatus() { return $this->status; }
+    public function UpdateFormField($f, $k, $v) { $this->formUpdates[] = [$f, $k, $v]; }
+    public function SendDebug($a, $b, $c) {}
+    protected function SendDataToParent($json) { return $this->parentFn ? ($this->parentFn)($json) : false; }
+    private function reg($ident, $name, $profile, $type)
+    {
+        if (!$this->hasVar($ident)) {
+            $GLOBALS['RLT_OBJ'][$GLOBALS['RLT_NEXT']++] = ['ident' => $ident, 'parent' => $this->InstanceID, 'type' => $type, 'value' => null, 'profile' => $profile, 'name' => $name];
+        }
+    }
+    public function hasVar($ident)
+    {
+        foreach ($GLOBALS['RLT_OBJ'] as $o) { if ($o['parent'] === $this->InstanceID && $o['ident'] === $ident) { return true; } }
+        return false;
+    }
+    public function varValue($ident)
+    {
+        foreach ($GLOBALS['RLT_OBJ'] as $o) { if ($o['parent'] === $this->InstanceID && $o['ident'] === $ident) { return $o['value']; } }
+        return null;
+    }
+    public function RegisterVariableFloat($i, $n, $p = '', $pos = 0) { $this->reg($i, $n, $p, 2); }
+    public function RegisterVariableInteger($i, $n, $p = '', $pos = 0) { $this->reg($i, $n, $p, 1); }
+    public function RegisterVariableBoolean($i, $n, $p = '', $pos = 0) { $this->reg($i, $n, $p, 0); }
+}
+function AC_SetLoggingStatus() {}
+function AC_SetAggregationType() {}
+
+require_once dirname(__DIR__) . '/RLTHub/module.php';
+require_once dirname(__DIR__) . '/RLTHubGateway/module.php';
+require_once dirname(__DIR__) . '/RLTHubDiscovery/module.php';
+
+$fails = 0;
+function check($label, $cond, $detail = '')
+{
+    global $fails;
+    if ($cond) { echo "  ok    $label\n"; }
+    else { $fails++; echo "  FEHLT $label" . ($detail !== '' ? "  ($detail)" : '') . "\n"; }
+}
+
+/** Test-Modbus-Server. Modi: echo (FC3/FC4 Wert = Adresse, FC1 festes Bitmuster) | map (Register aus JSON-Karte, sonst Exception) | zeros */
+function startServer(string $mode, array $map = []): array
+{
+    $port = random_int(20000, 60000);
+    $cnt  = tempnam(sys_get_temp_dir(), 'rltcnt');
+    $code = <<<'PHP'
+[$port, $cnt, $mode, $map] = [(int)$argv[1], $argv[2], $argv[3], json_decode($argv[4], true)];
+$srv = stream_socket_server("tcp://127.0.0.1:$port", $e, $es);
+if (!$srv) { exit(1); }
+file_put_contents($cnt, '0');
+$rx = function ($c, $n) { $b = ''; while (strlen($b) < $n) { $x = fread($c, $n - strlen($b)); if ($x === false || $x === '') { return null; } $b .= $x; } return $b; };
+while ($c = @stream_socket_accept($srv, 30)) {
+    while (true) {
+        $head = $rx($c, 7);
+        if ($head === null) { break; }
+        $h = unpack('ntid/npid/nlen/Cunit', $head);
+        $pdu = $rx($c, $h['len'] - 1);
+        if ($pdu === null) { break; }
+        $fc = ord($pdu[0]);
+        $a = unpack('nstart/ncount', substr($pdu, 1, 4));
+        if (($fc === 3 || $fc === 4) && $mode === 'echo') {
+            $data = '';
+            for ($i = 0; $i < $a['count']; $i++) { $data .= pack('n', ($a['start'] + $i) & 0xFFFF); }
+            $resp = chr($fc) . chr(strlen($data)) . $data;
+        } elseif (($fc === 3 || $fc === 4) && $mode === 'map') {
+            $data = '';
+            $okAll = true;
+            for ($i = 0; $i < $a['count']; $i++) {
+                $key = $fc . ':' . ($a['start'] + $i);
+                if (!isset($map[$key])) { $okAll = false; break; }
+                $data .= pack('n', $map[$key] & 0xFFFF);
+            }
+            $resp = $okAll ? chr($fc) . chr(strlen($data)) . $data : chr($fc | 0x80) . chr(2);
+        } elseif (($fc === 3 || $fc === 4) && $mode === 'zeros') {
+            $data = str_repeat("\x00\x00", $a['count']);
+            $resp = chr($fc) . chr(strlen($data)) . $data;
+        } elseif ($fc === 1) {
+            $resp = chr($fc) . chr(1) . chr(0b00000101);
+        } else {
+            $resp = chr($fc | 0x80) . chr(1);
+        }
+        fwrite($c, pack('nnn', $h['tid'], 0, strlen($resp) + 1) . chr($h['unit']) . $resp);
+    }
+    fclose($c);
+}
+PHP;
+    $proc = proc_open([PHP_BINARY, '-r', $code, (string)$port, $cnt, $mode, json_encode($map)], [], $pipes);
+    for ($i = 0; $i < 50; $i++) {
+        if (@file_get_contents($cnt) === '0') { break; }
+        usleep(100000);
+    }
+    return [$proc, $port, $cnt];
+}
+function stopServer(array $srv): void
+{
+    proc_terminate($srv[0]);
+    proc_close($srv[0]);
+    @unlink($srv[2]);
+}
+
+class FakeModbus implements RLT_ModbusClientInterface
+{
+    public $holding = [];
+    public $input = [];
+    public $coils = [];
+    public $calls = [];
+    public function readHolding($startReg, $count) { $this->calls[] = ['holding', $startReg]; return $this->holding[$startReg] ?? null; }
+    public function readInput($startReg, $count) { $this->calls[] = ['input', $startReg]; return $this->input[$startReg] ?? null; }
+    public function readCoils($startReg, $count) { $this->calls[] = ['coils', $startReg]; return $this->coils[$startReg] ?? null; }
+    public function close(): void {}
+}
+class FakeHub
+{
+    public $vars = [];
+    public $oneBased;
+    public function __construct(bool $oneBased) { $this->oneBased = $oneBased; }
+    public function SetVarFloat(string $i, float $v): void { $this->vars[$i] = $v; }
+    public function SetVarInteger(string $i, int $v): void { $this->vars[$i] = $v; }
+    public function SetVarBoolean(string $i, bool $v): void { $this->vars[$i] = $v; }
+    public function WireAddress(int $d): int { return $this->oneBased ? $d - 1 : $d; }
+}
+
+// ===========================================================================
+echo "1) RLT_ModbusTcpClient gegen echten Test-Server: FC3, FC4, Coils\n";
+$s = startServer('echo');
+$mb = new RLT_ModbusTcpClient('127.0.0.1', $s[1], 1);
+check('implementiert Interface', $mb instanceof RLT_ModbusClientInterface);
+check('readHolding (FC3)', ($mb->readHolding(2001, 1)[0] ?? null) === 2001);
+check('readInput (FC4)', ($mb->readInput(195, 2) ?? null) === [195, 196]);
+check('readCoils: LSB zuerst', $mb->readCoils(6, 3) === [0 => 1, 1 => 0, 2 => 1]);
+$mb->close();
+stopServer($s);
+
+echo "2) RLT_ModbusGatewayClient: Schema, Dekodierung, Fehlerfälle\n";
+$calls = [];
+$send = function (string $json) use (&$calls) {
+    $calls[] = json_decode($json, true);
+    $req = end($calls);
+    if ($req['Function'] === 1) { return "\x01\x01" . chr(0b00000101); }
+    $data = '';
+    for ($i = 0; $i < $req['Quantity']; $i++) { $data .= pack('n', ($req['Address'] + $i) & 0xFFFF); }
+    return chr($req['Function']) . chr(strlen($data)) . $data;
+};
+$gw = new RLT_ModbusGatewayClient($send);
+check('implementiert Interface', $gw instanceof RLT_ModbusClientInterface);
+check('readHolding: Schema korrekt', ($gw->readHolding(100, 2)) === [100, 101] && $calls[0] === ['DataID' => '{E310B701-4AE7-458E-B618-EC13A1A6F6A8}', 'Function' => 3, 'Address' => 100, 'Quantity' => 2, 'Data' => ''], json_encode($calls[0]));
+check('readInput: Function 4', $gw->readInput(195, 1) === [195] && $calls[1]['Function'] === 4);
+check('readCoils: Function 1, Bits', $gw->readCoils(6, 3) === [0 => 1, 1 => 0, 2 => 1] && $calls[2]['Function'] === 1);
+$gwEx = new RLT_ModbusGatewayClient(function ($j) { return "\x83\x02"; });
+check('Modbus-Exception -> null, Grund benannt', $gwEx->readHolding(1, 1) === null && strpos($gwEx->lastError, 'Exception') !== false, $gwEx->lastError);
+$n = 0;
+$gwSilent = new RLT_ModbusGatewayClient(function ($j) use (&$n) { $n++; return false; });
+$gwSilent->readInput(1, 1); $gwSilent->readInput(2, 1); $gwSilent->readInput(3, 1); $gwSilent->readInput(4, 1);
+check('stummes Gerät: nach 2 Fehlversuchen wird der Rest des Zyklus übersprungen', $n === 2, (string)$n);
+
+echo "3) Robatherm-Treiber gegen Fake-Modbus (Dokuadresse − 1)\n";
+$drv = new RLT_RobathermTrueControlDriver();
+$hub = new FakeHub(true);
+$mb = new FakeModbus();
+foreach ([2000 => 235, 2018 => 210, 2048 => 220, 2060 => 420, 2736 => 1234, 2351 => 80, 2353 => 75, 1992 => 1] as $a => $v) { $mb->holding[$a] = [$v]; }
+$mb->coils[5] = [1];
+$mb->coils[0] = [0];
+check('Zyklus ok', $drv->readValues($mb, $hub) === true);
+check('Temperaturen ÷10', abs($hub->vars['outsideTemp'] - 23.5) < 1e-9 && abs($hub->vars['supplyTemp'] - 21.0) < 1e-9);
+check('WRG auf 100 begrenzt', $hub->vars['heatRecoveryEfficiency'] === 100.0);
+check('Rohwerte co2/filter/fan', $hub->vars['co2'] === 420.0 && $hub->vars['filterRuntimeHours'] === 1234.0 && $hub->vars['fan1Flow'] === 80.0 && $hub->vars['fan2Flow'] === 75.0);
+check('Störung/Schalter/Watchdog', $hub->vars['faultSummary'] === true && $hub->vars['systemSwitch'] === true && $hub->vars['watchdogOk'] === false);
+$mb2 = new FakeModbus();
+foreach ([2000 => 0xFF9C, 2018 => 0, 2048 => 0, 2060 => 0, 2736 => 0, 2351 => 0, 2353 => 0, 1992 => 0] as $a => $v) { $mb2->holding[$a] = [$v]; }
+$mb2->coils[5] = [0]; $mb2->coils[0] = [0];
+$h2 = new FakeHub(true);
+$drv->readValues($mb2, $h2);
+check('negative Temperatur (signed16)', abs($h2->vars['outsideTemp'] + 10.0) < 1e-9);
+$mb3 = new FakeModbus();
+$h3 = new FakeHub(true);
+check('fehlende Register -> Zyklus meldet Fehler, nichts geschrieben', $drv->readValues($mb3, $h3) === false && !isset($h3->vars['outsideTemp']));
+check('probe: plausible Temperaturen erkannt', $drv->probe((function () { $m = new FakeModbus(); foreach ([2000 => 235, 2018 => 210, 2048 => 220] as $a => $v) { $m->holding[$a] = [$v]; } return $m; })()) !== null);
+check('probe: nur Nullen ist kein Fund', $drv->probe((function () { $m = new FakeModbus(); foreach ([2000, 2018, 2048] as $a) { $m->holding[$a] = [0]; } return $m; })()) === null);
+
+echo "4) Proxon-FWT-Treiber (Excel-Nummer = Wire-Adresse, FC4 für Temperaturen/Störung, FC3 für Filter/Betriebsart)\n";
+$px = new RLT_ProxonFwtDriver();
+$hp = new FakeHub(false);
+$m = new FakeModbus();
+$m->input[198] = [500];    // T3 Frischluft 5,00 °C
+$m->input[195] = [2100];   // T1 Zuluft 21,00 °C
+$m->input[196] = [2200];   // T7 Abluft 22,00 °C
+$m->input[47]  = [0];      // keine Störung
+$m->holding[469] = [321];  // Gerätefilter Stunden
+$m->holding[16]  = [2];    // Betriebsart EcoWinter
+check('Zyklus ok', $px->readValues($m, $hp) === true);
+check('T3/T1/T7 -> outside/supply/extract (Roh/100)', abs($hp->vars['outsideTemp'] - 5.0) < 1e-9 && abs($hp->vars['supplyTemp'] - 21.0) < 1e-9 && abs($hp->vars['extractTemp'] - 22.0) < 1e-9);
+// eta = (21-5)/(22-5) = 94,1 %
+check('WRG berechnet (94,1 %)', abs($hp->vars['heatRecoveryEfficiency'] - 94.1176) < 0.01, (string)$hp->vars['heatRecoveryEfficiency']);
+check('Filterstunden, keine Störung, Betriebsart an', $hp->vars['filterRuntimeHours'] === 321.0 && $hp->vars['faultSummary'] === false && $hp->vars['systemSwitch'] === true);
+check('Adressen ohne Umrechnung: 198/195/196/47 (FC4) und 469/16 (FC3)', in_array(['input', 198], $m->calls, true) && in_array(['input', 47], $m->calls, true) && in_array(['holding', 469], $m->calls, true) && in_array(['holding', 16], $m->calls, true), json_encode($m->calls));
+$m->input[47] = [5];
+$hp2 = new FakeHub(false);
+$px->readValues($m, $hp2);
+check('Störung ≠ 0 -> faultSummary true', $hp2->vars['faultSummary'] === true);
+$mw = new FakeModbus();
+$mw->input[198] = [0xFF38]; $mw->input[195] = [2100]; $mw->input[196] = [2200]; $mw->input[47] = [0]; $mw->holding[469] = [1]; $mw->holding[16] = [0];
+$hw = new FakeHub(false);
+$px->readValues($mw, $hw);
+check('Wert ≥ 32768 wird als negativ gelesen (-2,00 °C), Betriebsart Aus -> false', abs($hw->vars['outsideTemp'] + 2.0) < 1e-9 && $hw->vars['systemSwitch'] === false);
+check('Proxon liefert kein co2/fan (nicht in getBaseVars)', !in_array('co2', array_column($px->getBaseVars(), 0), true) && !in_array('fan1Flow', array_column($px->getBaseVars(), 0), true));
+
+echo "5) RLTHub (TCP) gegen den IPSModule-Nachbau: Variablen, Zyklus, Vertrag, Formular\n";
+class TestHub extends RLTHub
+{
+    public $mb;
+    protected function rltClient(): RLT_ModbusClientInterface { return $this->mb; }
+}
+$hubm = new TestHub(500);
+$hubm->Create();
+check('Timer mit Modul-Präfix registriert', $hubm->timers['ReadValuesTimer']['script'] === 'RLT_ReadValues($_IPS[\'TARGET\']);', $hubm->timers['ReadValuesTimer']['script']);
+$hubm->ApplyChanges();
+check('ohne Host: Status 104, Timer aus', $hubm->status === 104 && $hubm->timers['ReadValuesTimer']['interval'] === 0);
+$hubm->props['Host'] = '192.0.2.10';
+$hubm->ApplyChanges();
+check('mit Host: Status 102, Timer 60 s', $hubm->status === 102 && $hubm->timers['ReadValuesTimer']['interval'] === 60000);
+check('Variablen wirklich unter der Instanz angelegt', $hubm->hasVar('outsideTemp') && $hubm->hasVar('faultSummary') && $hubm->hasVar('lastSeenAt'));
+$hubm->mb = new FakeModbus();
+foreach ([2000 => 235, 2018 => 210, 2048 => 220, 2060 => 420, 2736 => 1234, 2351 => 80, 2353 => 75, 1992 => 1] as $a => $v) { $hubm->mb->holding[$a] = [$v]; }
+$hubm->mb->coils[5] = [1]; $hubm->mb->coils[0] = [1];
+$hubm->ReadValues();
+check('ReadValues schreibt in die echten Variablen (Reihenfolge Ident/Eltern-ID stimmt)', abs($hubm->varValue('outsideTemp') - 23.5) < 1e-9 && $hubm->varValue('faultSummary') === true && $hubm->varValue('co2') === 420.0);
+check('Status 102, lastSeenAt gesetzt', $hubm->status === 102 && $hubm->varValue('lastSeenAt') > 0 && $hubm->ReadAttributeInteger('LastSeenAt') > 0);
+$f = $hubm->GetFunctions()[0];
+check('Vertrag: contractVersion 1.0, alle Felder da', $f['contractVersion'] === '1.0' && count(array_intersect(['outsideTempID', 'supplyTempID', 'extractTempID', 'co2ID', 'heatRecoveryEfficiencyID', 'filterRuntimeHoursID', 'fan1FlowID', 'fan2FlowID', 'faultSummaryID', 'lastSeenAt', 'pollInterval', 'reachable', 'Caption', 'Measured', 'unit'], array_keys($f))) === 15);
+check('Vertrag: IDs zeigen auf reale Variablen', $f['outsideTempID'] > 0 && $f['faultSummaryID'] > 0 && $f['co2ID'] > 0 && $f['reachable'] === true && $f['pollInterval'] === 60);
+check('Vertrag: kein watchdogOkID (SUITE.md)', !array_key_exists('watchdogOkID', $f) && !array_key_exists('faultUrgentID', $f));
+$hubm->mb = new FakeModbus();
+$hubm->ReadValues();
+check('fehlgeschlagener Zyklus: Status 201, reachable false', $hubm->status === 201 && $hubm->GetFunctions()[0]['reachable'] === false);
+$hubm->props['AddressBase'] = 'auto';
+check('WireAddress auto (Robatherm): Doku − 1', $hubm->WireAddress(2001) === 2000);
+$hubm->props['AddressBase'] = 'zero';
+check('WireAddress zero: unverändert', $hubm->WireAddress(2001) === 2001);
+$hubm->props['AddressBase'] = 'one';
+check('WireAddress one: Doku − 1', $hubm->WireAddress(2001) === 2000);
+$form = json_decode($hubm->GetConfigurationForm(), true);
+$deviceOpts = null;
+foreach ($form['elements'] as $e) { if (($e['name'] ?? '') === 'Device') { $deviceOpts = array_column($e['options'], 'value'); } }
+check('Formular: TCP-Modul bietet nur TCP-Treiber an', $deviceOpts === ['robatherm_truecontrol'], json_encode($deviceOpts));
+check('Formular: onChange nutzt das Modulpräfix', strpos($hubm->GetConfigurationForm(), 'RLT_OnChangeDevice') !== false);
+
+echo "6) RLTHubGateway: Parent-Erkennung, Zyklus über das Gateway\n";
+class TestGw extends RLTHubGateway {}
+$gwm = new TestGw(600);
+$gwm->Create();
+$gwm->ApplyChanges();
+check('ohne Gateway: Status 201, Timer läuft trotzdem (Gateway kann später kommen)', $gwm->status === 201 && $gwm->timers['ReadValuesTimer']['interval'] === 60000);
+check('Timer mit Gateway-Präfix', $gwm->timers['ReadValuesTimer']['script'] === 'RLTGW_ReadValues($_IPS[\'TARGET\']);');
+check('Standardgerät Proxon FWT', $gwm->ReadPropertyString('Device') === 'proxon_fwt');
+$gwm->ReadValues();
+check('ohne Parent kein Absturz, Status bleibt 201', $gwm->status === 201);
+$GLOBALS['RLT_INSTANCES'][600] = ['ConnectionID' => 601];
+$GLOBALS['RLT_INSTANCES'][601] = ['module' => '{A5F663AB-C400-4FE5-B207-4D67CC030564}', 'props' => ['DeviceID' => 41]];
+$gwm->parentFn = function (string $json) {
+    $r = json_decode($json, true);
+    $vals = [198 => 500, 195 => 2100, 196 => 2200, 47 => 0, 469 => 321, 16 => 2];
+    if (!isset($vals[$r['Address']])) { return false; }
+    return chr($r['Function']) . "\x02" . pack('n', $vals[$r['Address']]);
+};
+$gwm->ApplyChanges();
+check('mit Gateway: Status 102', $gwm->status === 102);
+$gwm->ReadValues();
+check('Zyklus über das Gateway liefert Werte (Funktionscodes 4/3, Adressen unverändert)', abs($gwm->varValue('outsideTemp') - 5.0) < 1e-9 && $gwm->varValue('filterRuntimeHours') === 321.0 && $gwm->status === 102);
+$gf = $gwm->GetFunctions()[0];
+check('Vertrag Proxon: co2ID/fan1FlowID/fan2FlowID = 0, Rest belegt', $gf['co2ID'] === 0 && $gf['fan1FlowID'] === 0 && $gf['fan2FlowID'] === 0 && $gf['outsideTempID'] > 0 && $gf['heatRecoveryEfficiencyID'] > 0 && $gf['faultSummaryID'] > 0);
+check('WireAddress auto (Proxon): unverändert', $gwm->WireAddress(195) === 195);
+$gform = json_decode($gwm->GetConfigurationForm(), true);
+$gdev = null;
+foreach ($gform['elements'] as $e) { if (($e['name'] ?? '') === 'Device') { $gdev = array_column($e['options'], 'value'); } }
+check('Formular: Gateway-Modul bietet nur RTU-Treiber an', $gdev === ['proxon_fwt'], json_encode($gdev));
+check('module.json: Parent- und Kind-GUID wie im Vorbild (WPModbusHubGateway)', (function () {
+    $j = json_decode(file_get_contents(dirname(__DIR__) . '/RLTHubGateway/module.json'), true);
+    return $j['parentRequirements'] === ['{E310B701-4AE7-458E-B618-EC13A1A6F6A8}'] && $j['implemented'] === ['{77B31ABB-18FA-4B91-BB63-E5B2AB5588F4}'] && $j['prefix'] === 'RLTGW';
+})());
+
+echo "7) RLTHubDiscovery: echte Netzwerksuche gegen Test-Server\n";
+$good = startServer('map', ['3:2000' => 235, '3:2018' => 210, '3:2048' => 220]);
+$disc = new RLTHubDiscovery(700);
+$disc->Create();
+$res = $disc->Discover('127.0.0.1', '127.0.0.1', $good[1], 1);
+$rows = json_decode($disc->ReadAttributeString('ResultsJSON'), true);
+check('Robatherm-Register erkannt', count($rows) === 1 && $rows[0]['device'] === 'robatherm_truecontrol' && $rows[0]['host'] === '127.0.0.1', $res);
+$upd = null;
+foreach ($disc->formUpdates as $u) { if ($u[0] === 'Configurator') { $upd = json_decode($u[2], true); } }
+check('Configurator-Zeile mit Anlegen-Angaben (Modul-GUID, Host, Port, Unit, Gerätetyp)', $upd !== null && $upd[0]['create']['moduleID'] === '{19C33A5B-8C10-45F5-9A33-9928D9005B69}' && $upd[0]['create']['configuration']['Host'] === '127.0.0.1' && $upd[0]['create']['configuration']['Port'] === $good[1] && $upd[0]['create']['configuration']['Device'] === 'robatherm_truecontrol');
+$GLOBALS['RLT_INSTANCES'][800] = ['module' => '{19C33A5B-8C10-45F5-9A33-9928D9005B69}', 'props' => ['Host' => '127.0.0.1', 'Port' => $good[1], 'UnitId' => 1]];
+$disc->Discover('127.0.0.1', '127.0.0.1', $good[1], 1);
+$upd = null;
+foreach ($disc->formUpdates as $u) { if ($u[0] === 'Configurator') { $upd = json_decode($u[2], true); } }
+check('bereits vorhandene Instanz wird zugeordnet (instanceID)', ($upd[0]['instanceID'] ?? 0) === 800);
+unset($GLOBALS['RLT_INSTANCES'][800]);
+stopServer($good);
+$zeros = startServer('zeros');
+$disc->Discover('127.0.0.1', '127.0.0.1', $zeros[1], 1);
+check('Gerät, das überall 0 liefert, ist kein Fund', json_decode($disc->ReadAttributeString('ResultsJSON'), true) === []);
+stopServer($zeros);
+$exc = startServer('map', []);
+$disc->Discover('127.0.0.1', '127.0.0.1', $exc[1], 1);
+check('Gerät mit Modbus-Exceptions ist kein Fund', json_decode($disc->ReadAttributeString('ResultsJSON'), true) === []);
+stopServer($exc);
+$disc->Discover('127.0.0.1', '127.0.0.1', 1, 1);
+check('geschlossener Port: kein Fund, kein Absturz', json_decode($disc->ReadAttributeString('ResultsJSON'), true) === [] && strpos($disc->ReadAttributeString('ScanSummary'), '0 mit offenem Port') !== false, $disc->ReadAttributeString('ScanSummary'));
+check('ungültiger Bereich wird gemeldet', strpos($disc->Discover('abc', 'def', 502, 1), 'Ungültiger') !== false);
+$dform = json_decode($disc->GetConfigurationForm(), true);
+check('Formular enthält Configurator und Suchknopf mit Modulpräfix', strpos($disc->GetConfigurationForm(), 'RLTD_Discover') !== false && count(array_filter($dform['elements'], function ($e) { return ($e['type'] ?? '') === 'Configurator'; })) === 1);
+
+echo "8) Treiberliste und Modulkennungen\n";
+$guids = [];
+foreach (['RLTHub', 'RLTHubGateway', 'RLTHubDiscovery'] as $mod) {
+    $j = json_decode(file_get_contents(dirname(__DIR__) . "/$mod/module.json"), true);
+    $guids[] = $j['id'];
+    check("$mod: Klassenname = module.json-Name", class_exists($j['name']) && $j['name'] === $mod);
+}
+check('Modul-GUIDs eindeutig und verschieden von der Bibliothek', count(array_unique($guids)) === 3 && !in_array(json_decode(file_get_contents(dirname(__DIR__) . '/library.json'), true)['id'], $guids, true));
+check('jeder Treiber hat Klasse, Transport und Hinweis', (function () {
+    foreach (RLT_Drivers::DRIVERS as $k => $d) {
+        if (!class_exists($d['class']) || empty($d['transports']) || $d['confidence'] === '' || !(RLT_Drivers::create($k) instanceof RLT_VentilationDriverInterface)) { return false; }
+    }
+    return true;
+})());
+
+echo "\n" . ($fails === 0 ? "ALLE PRÜFUNGEN BESTANDEN\n" : "$fails PRÜFUNG(EN) FEHLGESCHLAGEN\n");
+exit($fails === 0 ? 0 : 1);

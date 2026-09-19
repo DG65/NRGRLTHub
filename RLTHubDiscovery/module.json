@@ -1,0 +1,15 @@
+{
+  "id": "{CC2C38CA-7675-4F27-B993-7B68187B8879}",
+  "name": "RLTHubDiscovery",
+  "type": 5,
+  "vendor": "",
+  "aliases": [
+    "NRG-Stack RLTHubDiscovery",
+    "Lüftungsanlagen Suche"
+  ],
+  "url": "https://github.com/DG65/NRGRLTHub",
+  "parentRequirements": [],
+  "childRequirements": [],
+  "implemented": [],
+  "prefix": "RLTD"
+}
