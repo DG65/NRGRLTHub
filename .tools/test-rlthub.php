@@ -13,7 +13,7 @@
  * Fake-Hub und konnten das nicht sehen.
  */
 
-foreach (['VARIABLETYPE_BOOLEAN' => 0, 'VARIABLETYPE_INTEGER' => 1, 'VARIABLETYPE_FLOAT' => 2, 'VARIABLETYPE_STRING' => 3] as $c => $v) {
+foreach (['VARIABLETYPE_BOOLEAN' => 0, 'VARIABLETYPE_INTEGER' => 1, 'VARIABLETYPE_FLOAT' => 2, 'VARIABLETYPE_STRING' => 3, 'KR_READY' => 10103] as $c => $v) {
     if (!defined($c)) { define($c, $v); }
 }
 
@@ -51,6 +51,16 @@ function IPS_GetName($id) { return 'Instanz ' . $id; }
 function IPS_GetInstance($id) { return ['ConnectionID' => $GLOBALS['RLT_INSTANCES'][$id]['ConnectionID'] ?? 0]; }
 function IPS_InstanceExists($id) { return isset($GLOBALS['RLT_INSTANCES'][$id]); }
 function IPS_GetProperty($id, $name) { return $GLOBALS['RLT_INSTANCES'][$id]['props'][$name] ?? null; }
+$GLOBALS['RLT_RUNLEVEL'] = KR_READY;
+$GLOBALS['RLT_LOG'] = [];
+$GLOBALS['RLT_MODOBJ'] = [];
+function IPS_GetKernelRunlevel() { return $GLOBALS['RLT_RUNLEVEL']; }
+function IPS_LogMessage($sender, $msg) { $GLOBALS['RLT_LOG'][] = [$sender, $msg]; }
+// PREFIX_-Wrapper, wie sie Symcon aus den öffentlichen Methoden erzeugt.
+foreach (['RLT', 'RLTGW', 'RLTD'] as $pre) {
+    eval("function {$pre}_AdoptDismissState(\$id, \$what, \$value) { return \$GLOBALS['RLT_MODOBJ'][\$id]->AdoptDismissState(\$what, \$value); }");
+    eval("function {$pre}_GetDismissState(\$id) { return \$GLOBALS['RLT_MODOBJ'][\$id]->GetDismissState(); }");
+}
 
 class IPSModule
 {
@@ -60,9 +70,10 @@ class IPSModule
     public $status = 0;
     public $timers = [];
     public $formUpdates = [];
+    public $statusSeen = [];
     /** @var callable|null */
     public $parentFn = null;
-    public function __construct($id = 0) { $this->InstanceID = $id; }
+    public function __construct($id = 0) { $this->InstanceID = $id; $GLOBALS['RLT_MODOBJ'][$id] = $this; }
     public function Create() {}
     public function ApplyChanges() {}
     public function RegisterPropertyString($n, $v) { $this->props[$n] = $v; }
@@ -73,13 +84,16 @@ class IPSModule
     public function ReadPropertyInteger($n) { return (int)$this->props[$n]; }
     public function RegisterAttributeInteger($n, $v) { $this->attrs[$n] = $v; }
     public function RegisterAttributeString($n, $v) { $this->attrs[$n] = $v; }
+    public function RegisterAttributeBoolean($n, $v) { $this->attrs[$n] = $v; }
+    public function ReadAttributeBoolean($n) { return (bool)$this->attrs[$n]; }
+    public function WriteAttributeBoolean($n, $v) { $this->attrs[$n] = $v; }
     public function ReadAttributeInteger($n) { return (int)$this->attrs[$n]; }
     public function ReadAttributeString($n) { return (string)$this->attrs[$n]; }
     public function WriteAttributeInteger($n, $v) { $this->attrs[$n] = $v; }
     public function WriteAttributeString($n, $v) { $this->attrs[$n] = $v; }
     public function RegisterTimer($n, $i, $s) { $this->timers[$n] = ['interval' => $i, 'script' => $s]; }
     public function SetTimerInterval($n, $i) { $this->timers[$n]['interval'] = $i; }
-    public function SetStatus($s) { $this->status = $s; }
+    public function SetStatus($s) { $this->status = $s; $this->statusSeen[$s] = true; }
     public function GetStatus() { return $this->status; }
     public function UpdateFormField($f, $k, $v) { $this->formUpdates[] = [$f, $k, $v]; }
     public function SendDebug($a, $b, $c) {}
@@ -117,6 +131,18 @@ function check($label, $cond, $detail = '')
     global $fails;
     if ($cond) { echo "  ok    $label\n"; }
     else { $fails++; echo "  FEHLT $label" . ($detail !== '' ? "  ($detail)" : '') . "\n"; }
+}
+
+/** Alle Formularelemente rekursiv (Panels, Popups) als flache Liste. */
+function walkForm(array $elements): array
+{
+    $out = [];
+    foreach ($elements as $e) {
+        $out[] = $e;
+        foreach (['items'] as $k) { if (isset($e[$k])) { $out = array_merge($out, walkForm($e[$k])); } }
+        if (isset($e['popup']['items'])) { $out = array_merge($out, walkForm($e['popup']['items'])); }
+    }
+    return $out;
 }
 
 /** Test-Modbus-Server. Modi: echo (FC3/FC4 Wert = Adresse, FC1 festes Bitmuster) | map (Register aus JSON-Karte, sonst Exception) | zeros */
@@ -385,10 +411,214 @@ $disc->Discover('127.0.0.1', '127.0.0.1', $exc[1], 1);
 check('Gerät mit Modbus-Exceptions ist kein Fund', json_decode($disc->ReadAttributeString('ResultsJSON'), true) === []);
 stopServer($exc);
 $disc->Discover('127.0.0.1', '127.0.0.1', 1, 1);
-check('geschlossener Port: kein Fund, kein Absturz', json_decode($disc->ReadAttributeString('ResultsJSON'), true) === [] && strpos($disc->ReadAttributeString('ScanSummary'), '0 mit offenem Port') !== false, $disc->ReadAttributeString('ScanSummary'));
+check('geschlossener Port: kein Fund, kein Absturz', json_decode($disc->ReadAttributeString('ResultsJSON'), true) === [] && strpos($disc->ReadAttributeString('ScanDetails'), '0 mit offenem Port') !== false, $disc->ReadAttributeString('ScanDetails'));
 check('ungültiger Bereich wird gemeldet', strpos($disc->Discover('abc', 'def', 502, 1), 'Ungültiger') !== false);
 $dform = json_decode($disc->GetConfigurationForm(), true);
-check('Formular enthält Configurator und Suchknopf mit Modulpräfix', strpos($disc->GetConfigurationForm(), 'RLTD_Discover') !== false && count(array_filter($dform['elements'], function ($e) { return ($e['type'] ?? '') === 'Configurator'; })) === 1);
+check('Formular enthält Configurator und Suchknopf mit Modulpräfix', strpos($disc->GetConfigurationForm(), 'RLTD_Discover') !== false && count(array_filter(walkForm($dform['elements']), function ($e) { return ($e['type'] ?? '') === 'Configurator'; })) === 1);
+
+
+echo "9) Modul-Konventionen (SUITE.md: Formular-Optik, Store-Review, Status, Rückmeldung, Sprache)\n";
+// Testreste aus Abschnitt 6 entfernen: die Suche listet zur Laufzeit die Gateways der ANLAGE des Nutzers auf.
+unset($GLOBALS['RLT_INSTANCES'][600], $GLOBALS['RLT_INSTANCES'][601]);
+$lib = json_decode(file_get_contents(dirname(__DIR__) . '/library.json'), true);
+$root = dirname(__DIR__);
+$fresh = [
+    'RLTHub'          => new RLTHub(900),
+    'RLTHubGateway'   => new RLTHubGateway(901),
+    'RLTHubDiscovery' => new RLTHubDiscovery(902),
+];
+$forms = [];
+foreach ($fresh as $name => $m) {
+    $m->Create();
+    $m->ApplyChanges();
+    $forms[$name] = json_decode($m->GetConfigurationForm(), true);
+}
+foreach ($forms as $name => $form) {
+    $el = $form['elements'];
+    $n = count($el);
+    check("$name: Panel-Reihenfolge Wozu → Neu → Doku & Hilfe (eingeklappt) …", ($el[0]['name'] ?? '') === 'PurposeIntroPanel' && ($el[1]['name'] ?? '') === 'NewsPanel' && strpos($el[2]['caption'] ?? '', '📖 Dokumentation & Hilfe') === 0 && $el[2]['expanded'] === false);
+    check("$name: … Forum-Hinweis, dann „Über dieses Modul“ ganz unten", ($el[$n - 2]['name'] ?? '') === 'ForumHintPanel' && strpos($el[$n - 1]['caption'] ?? '', '🧡  Über dieses Modul') === 0);
+    check("$name: Wozu- und Neu-Panel aufgeklappt, Über-Panel eingeklappt und NICHT wegklickbar (kein name)", $el[0]['expanded'] === true && $el[1]['expanded'] === true && $el[$n - 1]['expanded'] === false && !isset($el[$n - 1]['name']));
+    check("$name: Neu-Panel trägt die Version in der Caption", strpos($el[1]['caption'], $lib['version']) !== false, $el[1]['caption']);
+    $dokuText = json_encode($el[2], JSON_UNESCAPED_UNICODE);
+    check("$name: Doku-Panel nennt die Versionsnummer", strpos($dokuText, 'Version ' . $lib['version']) !== false);
+    $paypal = 0; $license = 0;
+    foreach (walkForm($el) as $e) {
+        if (($e['type'] ?? '') === 'Button' && isset($e['link'])) {
+            if ($e['link'] !== true || strpos($e['onClick'], "echo '") !== 0) { $paypal = -100; }
+            if (strpos($e['onClick'], 'paypal.me/DietmarGureth') !== false) { $paypal++; }
+            if (strpos($e['onClick'], 'github.com/DG65/NRGRLTHub/blob/beta/LICENSE') !== false) { $license++; }
+        }
+    }
+    check("$name: Link-Schaltflächen nutzen onClick=echo + link=true; PayPal und Lizenz je einmal, Lizenz auf Repo NRGRLTHub/beta", $paypal === 1 && $license === 1, "paypal=$paypal license=$license");
+    $all = json_encode(walkForm($el), JSON_UNESCAPED_UNICODE);
+    // Der Suchbereich-Hinweis nennt zur Laufzeit das EIGENE Netz des Nutzers (abgeleitet, nicht fest im Code).
+    $allNoRuntime = preg_replace('/Leer = [\d.]+ bis [\d.]+ \(aus dem eigenen Netz abgeleitet\)\./u', '', $all);
+    check("$name: Über-Panel im Wortlaut „Variante A“", strpos($all, 'Entstanden aus echter Begeisterung für die eigene Anlage — und ein paar durchgetippten Abenden.') !== false && strpos($all, 'dietmar@gureth.eu') !== false && strpos($all, 'Über eine kleine Spende freue ich mich') !== false);
+    $badOnClick = false;
+    foreach (walkForm($el) as $e) {
+        if (isset($e['onClick']) && (strpos($e['onClick'], '$_IPS') !== false)) { $badOnClick = true; }
+    }
+    check("$name: kein \$_IPS['TARGET'] in onClick (Store-Review 10)", !$badOnClick);
+    $doubleQ = false; $popupOk = true;
+    foreach (walkForm($el) as $e) {
+        if (($e['type'] ?? '') === 'PopupButton') {
+            if (preg_match('/\?\s*\?/u', $e['caption'])) { $doubleQ = true; }
+            if (substr(trim($e['caption']), -1) !== '?') { $popupOk = false; }
+        }
+    }
+    check("$name: PopupButton-Captions sind die volle Frage, ohne zweites „?“", !$doubleQ && $popupOk);
+    check("$name: kein RowLayout (nie mehrere Eingabefelder in eine Reihe)", strpos($all, 'RowLayout') === false);
+    $foreign = preg_match('/.{0,25}(#\d{3,}|192\.168\.|10\.\d+\.\d+\.\d+|Otto|Zepp|Ghostraider).{0,25}/u', $allNoRuntime, $fm2);
+    check("$name: keine fremden Anlagendetails im Formular (IDs, private IPs, Namen)", !$foreign, $foreign ? $fm2[0] : '');
+    $anglicisms = [];
+    foreach (['Scan ', 'Button ', 'Dry-Run', 'Polling', 'Framework', 'Event '] as $w) { if (strpos($all, $w) !== false) { $anglicisms[] = $w; } }
+    check("$name: keine vermeidbaren Anglizismen im Formular", $anglicisms === [], implode(',', $anglicisms));
+    $ackTargets = 0;
+    foreach (walkForm($el) as $e) {
+        if (($e['type'] ?? '') === 'Button' && isset($e['onClick']) && preg_match('/^[A-Z]+_Ack\w+\(\$id\);$/', $e['onClick'])) { $ackTargets++; }
+    }
+    check("$name: drei Ausblenden-Schaltflächen (Wozu, Neu, Forum) rufen PREFIX_Ack…(\$id)", $ackTargets === 3, (string)$ackTargets);
+}
+check("Neu-Version = library.json-Version in allen drei Modulen", RLTHub::NEWS_VERSION === $lib['version'] && RLTHubGateway::NEWS_VERSION === $lib['version'] && RLTHubDiscovery::NEWS_VERSION === $lib['version'], $lib['version']);
+check("library.json: nur id/author/name/url/compatibility/version/build/date, compatibility als {version}", array_keys($lib) === ['id', 'author', 'name', 'url', 'compatibility', 'version', 'build', 'date'] && array_keys($lib['compatibility']) === ['version']);
+foreach (['RLTHub', 'RLTHubGateway', 'RLTHubDiscovery'] as $mod) {
+    $j = json_decode(file_get_contents("$root/$mod/module.json"), true);
+    check("$mod: Modulname ohne „IPS“/„Symcon“, vendor leer (kein Gerätehersteller), Präfix eigen", stripos($j['name'] . ' ' . implode(' ', $j['aliases']), 'ips') === false && stripos($j['name'] . ' ' . implode(' ', $j['aliases']), 'symcon') === false && $j['vendor'] === '' && in_array($j['prefix'], ['RLT', 'RLTGW', 'RLTD'], true));
+}
+check("LICENSE: PolyForm Noncommercial 1.0.0 mit deutschem Vorspann", strpos(file_get_contents("$root/LICENSE"), 'NRG-Stack — Lizenz') === 0 && strpos(file_get_contents("$root/LICENSE"), 'PolyForm Noncommercial License 1.0.0') !== false);
+
+// Öffentliche Funktionen: keine Standardwerte, nur skalare/keine Typen (Wrapper honorieren keine Defaults)
+$badSig = [];
+foreach (['RLTHub', 'RLTHubGateway', 'RLTHubDiscovery'] as $cls) {
+    foreach ((new ReflectionClass($cls))->getMethods(ReflectionMethod::IS_PUBLIC) as $rm) {
+        if ($rm->class === 'IPSModule' || $rm->isStatic() || $rm->isConstructor()) { continue; }
+        foreach ($rm->getParameters() as $rp) {
+            $t = $rp->getType();
+            if ($rp->isDefaultValueAvailable() || ($t !== null && !in_array($t->getName(), ['string', 'int', 'float', 'bool'], true))) { $badSig[] = "$cls::{$rm->name}"; }
+        }
+    }
+}
+check("öffentliche Methoden: keine PHP-Standardwerte, nur skalare Parametertypen", $badSig === [], implode(',', $badSig));
+$gfRet = (new ReflectionMethod('RLTHub', 'TestConnection'))->getReturnType();
+check("Rückmeldungs-Methoden liefern Text zum Anzeigen; Vertragsfunktion GetFunctions liefert Daten (nie Text-als-bool)", $gfRet !== null && $gfRet->getName() === 'string' && (new ReflectionMethod('RLTHub', 'GetFunctions'))->getReturnType()->getName() === 'array');
+
+// Status-Codes: jeder tatsächlich gesetzte Code steht in form["status"]
+$hubT = new TestHub(910); $hubT->Create(); $hubT->props['Host'] = '192.0.2.1'; $hubT->ApplyChanges(); $hubT->mb = new FakeModbus(); $hubT->ReadValues();
+$hubT->props['Active'] = false; $hubT->ApplyChanges();
+$formT = json_decode($hubT->GetConfigurationForm(), true);
+$declared = array_column($formT['status'], 'code');
+check("Status-Codes: jeder gesetzte Code (102/104/201) hat einen form-status-Eintrag mit Icon", count(array_diff(array_keys($hubT->statusSeen), $declared)) === 0 && count(array_filter($formT['status'], function ($x) { return in_array($x['icon'], ['active', 'inactive', 'error'], true); })) === count($formT['status']), json_encode(array_keys($hubT->statusSeen)));
+check("Status: inaktiv/unvollständig ist 104 (kein Fehlercode > 200, Store-Review 9d)", (function () {
+    $m = new RLTHub(911); $m->Create(); $m->ApplyChanges(); $one = $m->status;
+    $m->props['Host'] = '192.0.2.1'; $m->props['Active'] = false; $m->ApplyChanges();
+    return $one === 104 && $m->status === 104;
+})());
+
+// Ausblenden: Bestätigen, Dauerhaftigkeit, Teilen nur zwischen Instanzen DESSELBEN Typs
+$a = new RLTHub(920); $b = new RLTHub(921); $c = new RLTHubGateway(922);
+foreach ([$a, $b, $c] as $m) { $m->Create(); }
+$GLOBALS['RLT_INSTANCES'][920] = ['module' => RLTHub::MODULE_GUID, 'props' => []];
+$GLOBALS['RLT_INSTANCES'][921] = ['module' => RLTHub::MODULE_GUID, 'props' => []];
+$GLOBALS['RLT_INSTANCES'][922] = ['module' => RLTHubGateway::MODULE_GUID, 'props' => []];
+$a->AckPurposeIntro(); $a->AckNews(); $a->AckForumHint();
+$names = function ($m) { return array_column(array_filter(json_decode($m->GetConfigurationForm(), true)['elements'], function ($e) { return isset($e['name']); }), 'name'); };
+check("Bestätigen blendet Wozu/Neu/Forum an dieser Instanz dauerhaft aus (Über-Panel bleibt)", array_intersect($names($a), ['PurposeIntroPanel', 'NewsPanel', 'ForumHintPanel']) === [] && strpos(json_encode(json_decode($a->GetConfigurationForm(), true)['elements'], JSON_UNESCAPED_UNICODE), 'Über dieses Modul') !== false);
+check("Bestätigen wird an die Geschwister-Instanz desselben Typs weitergegeben", array_intersect($names($b), ['PurposeIntroPanel', 'NewsPanel', 'ForumHintPanel']) === []);
+check("… aber NICHT an ein anderes Modul (RLTHubGateway behält alle drei Panels)", count(array_intersect($names($c), ['PurposeIntroPanel', 'NewsPanel', 'ForumHintPanel'])) === 3);
+$d = new RLTHub(923); $d->Create(); $GLOBALS['RLT_INSTANCES'][923] = ['module' => RLTHub::MODULE_GUID, 'props' => []];
+$d->ApplyChanges();
+check("neu angelegte Instanz übernimmt beim ersten ApplyChanges den Ausblenden-Stand einer Geschwister-Instanz", array_intersect($names($d), ['PurposeIntroPanel', 'NewsPanel', 'ForumHintPanel']) === []);
+$e1 = new RLTHub(924); $e1->Create(); $GLOBALS['RLT_INSTANCES'][924] = ['module' => RLTHub::MODULE_GUID, 'props' => []];
+$e1->attrs['SeenNews'] = '0.0.1';
+$e1->ApplyChanges();
+check("Ping-Pong strukturell ausgeschlossen: AdoptDismissState propagiert nicht weiter (kein Endlosaufruf, Stand konsistent)", $e1->ReadAttributeString('SeenNews') === RLTHub::NEWS_VERSION);
+unset($GLOBALS['RLT_INSTANCES'][920], $GLOBALS['RLT_INSTANCES'][921], $GLOBALS['RLT_INSTANCES'][922], $GLOBALS['RLT_INSTANCES'][923], $GLOBALS['RLT_INSTANCES'][924]);
+
+// Forum-Hinweis: ohne echte URL nur Text (keine erfundene Verknüpfung), mit URL echte Link-Schaltfläche
+$forumEl = function ($m) { foreach (json_decode($m->GetConfigurationForm(), true)['elements'] as $e) { if (($e['name'] ?? '') === 'ForumHintPanel') { return $e; } } return null; };
+$h930 = new RLTHub(930); $h930->Create();
+$f0 = $forumEl($h930);
+check("Forum-Hinweis ohne veröffentlichten Thread: nur Text, keine Platzhalter-Verknüpfung", $f0 !== null && count(array_filter($f0['items'], function ($i) { return isset($i['link']); })) === 0);
+class TestHubForum extends RLTHub { public const FORUM_THREAD_URL = 'https://community.symcon.de/t/beispiel/1'; }
+$fm = new TestHubForum(931); $fm->Create();
+$f1 = $forumEl($fm);
+check("Forum-Hinweis mit Thread-URL: Schaltfläche 'onClick=echo <URL>' und link=true", $f1 !== null && count(array_filter($f1['items'], function ($i) { return ($i['link'] ?? false) === true && strpos($i['onClick'], "echo 'https://community.symcon.de/t/beispiel/1'") === 0; })) === 1);
+
+// Cast-Sicherheit (Store-Review 9c): SDK liefert beim Reload false statt des Typs
+class FalseReadHub extends RLTHub
+{
+    public function ReadPropertyString($n) { return false; }
+    public function ReadPropertyInteger($n) { return false; }
+    public function ReadPropertyBoolean($n) { return false; }
+    public function ReadAttributeString($n) { return false; }
+    public function ReadAttributeInteger($n) { return false; }
+    public function ReadAttributeBoolean($n) { return false; }
+}
+$fr = new FalseReadHub(940); $fr->Create();
+$thrown = null;
+try { $fr->ApplyChanges(); $fr->GetConfigurationForm(); $fr->GetFunctions(); $fr->ReadValues(); } catch (\Throwable $t) { $thrown = get_class($t) . ': ' . $t->getMessage(); }
+check("SDK-Rückgabe false (Instanz lädt neu) wirft keinen TypeError/Fehler", $thrown === null, (string)$thrown);
+$GLOBALS['RLT_RUNLEVEL'] = 10100;
+$hk = new TestHub(941); $hk->Create(); $hk->props['Host'] = '192.0.2.1'; $hk->ApplyChanges(); $hk->mb = new FakeModbus(); $hk->status = 102;
+$hk->ReadValues();
+check("Zyklus läuft nur bei Kernel-Runlevel KR_READY (kein Lesen während des Hochfahrens)", $hk->status === 102);
+$GLOBALS['RLT_RUNLEVEL'] = KR_READY;
+
+// Sichtbarkeit von Fehlern: dauerhaft loggen, aber nur beim Übergang
+$GLOBALS['RLT_LOG'] = [];
+$hl = new TestHub(942); $hl->Create(); $hl->props['Host'] = '192.0.2.1'; $hl->ApplyChanges(); $hl->mb = new FakeModbus();
+$hl->ReadValues(); $hl->ReadValues(); $hl->ReadValues();
+check("Ausfall wird einmalig im Symcon-Protokoll vermerkt (nicht bei jedem Takt)", count($GLOBALS['RLT_LOG']) === 1 && $GLOBALS['RLT_LOG'][0][0] === 'RLTHub' && strpos($GLOBALS['RLT_LOG'][0][1], '#942') !== false, json_encode($GLOBALS['RLT_LOG']));
+foreach ([2000 => 235, 2018 => 210, 2048 => 220, 2060 => 420, 2736 => 1234, 2351 => 80, 2353 => 75, 1992 => 1] as $addr => $val) { $hl->mb->holding[$addr] = [$val]; }
+$hl->mb->coils[5] = [0]; $hl->mb->coils[0] = [1];
+$hl->ReadValues();
+$hl->mb->holding = []; $hl->ReadValues();
+check("erneuter Ausfall nach Erfolg wird wieder vermerkt", count($GLOBALS['RLT_LOG']) === 2 && $hl->status === 201);
+
+// Rückmeldung je Aktion
+check("Verbindungstest: sichtbarer Ergebnistext (✅/❌) für Erfolg und Fehler", strpos($hl->TestConnection(), '❌') === 0 && (function () use ($hl) { $hl->mb->holding = [2000 => [235], 2018 => [210], 2048 => [220], 2060 => [1], 2736 => [1], 2351 => [1], 2353 => [1], 1992 => [1]]; $hl->mb->coils[5] = [0]; $hl->mb->coils[0] = [1]; return strpos($hl->TestConnection(), '✅') === 0; })());
+$tGw = new RLTHubGateway(943); $tGw->Create(); $tGw->ApplyChanges();
+check("Verbindungstest ohne Gateway: verständliche Fehlermeldung statt Absturz", strpos($tGw->TestConnection(), '❌') === 0);
+
+// Neuinstallations-Simulation
+$ni = new RLTHub(950); $ni->Create();
+check("Neuinstallation: Vorgaben generisch (kein Host, Standardport 502, Unit-ID 1, Adress-Basis automatisch, aktiv)", $ni->props['Host'] === '' && $ni->props['Port'] === 502 && $ni->props['UnitId'] === 1 && $ni->props['AddressBase'] === 'auto');
+$niAll = json_encode(walkForm(json_decode($ni->GetConfigurationForm(), true)['elements']), JSON_UNESCAPED_UNICODE);
+check("Neuinstallation: Hinweis, dass die Gerätetyp-Vorbelegung nur der erste Listeneintrag ist, und wann die Adresse von Hand nötig ist", strpos($niAll, 'nur der erste Eintrag der Liste') !== false && strpos($niAll, 'trägt RLTHubDiscovery automatisch ein') !== false);
+$dscNew = new RLTHubDiscovery(951); $dscNew->Create();
+check("Neuinstallation Suche: Suchbereich leer vorbelegt (wird aus dem eigenen Netz abgeleitet, nicht aus dem des Autors)", $dscNew->props['ScanStartIP'] === '' && $dscNew->props['ScanEndIP'] === '');
+
+// Suche: Verbund-Status-Kopfzeile
+$dm = new RLTHubDiscovery(960); $dm->Create();
+$dmForm = json_decode($dm->GetConfigurationForm(), true);
+$search = null; foreach (walkForm($dmForm['elements']) as $e) { if (($e['caption'] ?? '') === '🔎 Suchbereich') { $search = $e; } }
+$idxBtn = null; $idxLine = null; $lineCap = ''; $detailCollapsed = false;
+foreach ($search['items'] as $i => $e) {
+    if (($e['type'] ?? '') === 'Button') { $idxBtn = $i; }
+    if (($e['name'] ?? '') === 'ScanResult') { $idxLine = $i; $lineCap = $e['caption']; }
+    if (($e['caption'] ?? '') === 'Details der letzten Suche') { $detailCollapsed = $e['expanded'] === false; }
+}
+check("Suche: Schaltfläche steht VOR der Statuszeile, technische Details in eingeklapptem Unter-Panel", $idxBtn !== null && $idxLine !== null && $idxBtn < $idxLine && $detailCollapsed);
+check("Suche: vor der ersten Suche „ℹ️ Noch nicht gesucht“", strpos($lineCap, 'ℹ️ Noch nicht gesucht') === 0, $lineCap);
+$good2 = startServer('map', ['3:2000' => 235, '3:2018' => 210, '3:2048' => 220]);
+$dm->Discover('127.0.0.1', '127.0.0.1', $good2[1], 1);
+$line1 = ''; foreach (array_reverse($dm->formUpdates) as $u) { if ($u[0] === 'ScanResult') { $line1 = $u[2]; break; } }
+check("Suche: Kopfzeile im Muster „✅ N … gefunden (zuletzt HH:MM:SS Uhr).“", (bool)preg_match('/^✅ 1 Lüftungsanlage\(n\) gefunden \(zuletzt \d\d:\d\d:\d\d Uhr\)\.$/u', $line1), $line1);
+$dm->attrs['LastScanTs'] = 1;
+stopServer($good2);
+$dm->Discover('127.0.0.1', '127.0.0.1', 1, 1);
+$line2 = ''; foreach (array_reverse($dm->formUpdates) as $u) { if ($u[0] === 'ScanResult') { $line2 = $u[2]; break; } }
+check("Suche: Zeitstempel wird bei JEDER Suche fortgeschrieben, auch bei 0 Funden (⚠️)", $dm->ReadAttributeInteger('LastScanTs') > 1 && strpos($line2, '⚠️ 0 Lüftungsanlage(n)') === 0, $line2);
+check("Suche: Rückgabe des Knopfs nennt Kopfzeile UND Details (sichtbare Rückmeldung)", strpos($dm->Discover('127.0.0.1', '127.0.0.1', 1, 1), 'Adressen geprüft') !== false);
+
+// README, Badges, CI
+$readme = file_get_contents("$root/README.md");
+$hasWorkflow = file_exists("$root/.github/workflows/check-style.yml");
+check("README: Badge-Zeile (Symcon, Modul Version, Symcon Version, License, PayPal) direkt unter der Überschrift, Versionen stimmen", (bool)preg_match('/^# NRG-Stack RLTHub\n\n!\[Symcon\]\(https:\/\/img\.shields\.io\/badge\/Symcon-PHPModul-blue\)\n!\[Modul Version\]\([^)]*' . preg_quote(str_replace('-', '--', $lib['version']), '/') . '[^)]*\)\n!\[Symcon Version\]\([^)]*9\.0%2B[^)]*\)\n!\[License\]\([^)]*PolyForm_Noncommercial_1\.0\.0[^)]*\)\n/u', $readme));
+check("README: Check-Style-Badge nur, wenn der Workflow wirklich existiert (nie ein gefälschtes „passing“)", $hasWorkflow === (strpos($readme, 'actions/workflows/check-style.yml') !== false));
+check("README: PayPal-Badge und Verweis „Teil des NRG-Stack“", strpos($readme, 'paypal.me/DietmarGureth') !== false && strpos($readme, '**Teil des NRG-Stack**') !== false);
+check("CHANGELOG nennt die aktuelle Version", strpos(file_get_contents("$root/CHANGELOG.md"), '## ' . $lib['version']) !== false);
 
 echo "8) Treiberliste und Modulkennungen\n";
 $guids = [];

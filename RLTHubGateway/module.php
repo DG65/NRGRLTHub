@@ -18,8 +18,24 @@ class RLTHubGateway extends IPSModule
     use RLT_HubTrait;
 
     public const PREFIX = 'RLTGW';
+    public const MODULE_NAME = 'RLTHubGateway';
+    public const MODULE_GUID = '{1AE15A54-8ECC-4599-961B-447BD8671715}';
     public const DEFAULT_DEVICE = 'proxon_fwt';
     public const TRANSPORT = 'rtu';
+
+    public const NEWS_VERSION = '0.3.0';
+    // Der Forum-Thread existiert noch nicht — solange leer, zeigt der Hinweis nur Text.
+    public const FORUM_THREAD_URL = '';
+    public const LICENSE_URL = 'https://github.com/DG65/NRGRLTHub/blob/beta/LICENSE';
+    public const PURPOSE = [
+        'Liest eine Lüftungsanlage über RS485/Modbus RTU aus — mit Symcons eigenem ModBus-Gateway (Serial Port → ModBus Gateway → diese Instanz), z. B. an einem USB-RS485-Dongle am Symcon-Host oder am RS485-Anschluss einer Symbox.',
+        'Der Nutzen: Geräte, die nur eine serielle Schnittstelle haben (z. B. Proxon FWT), lassen sich einbinden, ohne dass dieses Modul selbst eine serielle Schnittstelle öffnen muss. Werte: Außen-, Zu- und Ablufttemperatur, Wirkungsgrad der Wärmerückgewinnung (berechnet), Filterlaufzeit, Störung. Anlagen mit Modbus TCP bindest du mit RLTHub an.',
+        'Das Modul liest nur — es steuert die Anlage nicht.',
+    ];
+    public const NEWS = [
+        '• 🆕 Erste Version: Lüftungsanlagen über Symcons ModBus-Gateway auslesen (RS485/Modbus RTU). Gerätetyp: Proxon FWT 2.0.',
+        '• ⚠️ Noch an keiner echten Anlage verifiziert: Die Temperaturskalierung unter 0 °C ist offen, Details im Panel „Dokumentation & Hilfe". Der Weg über das ModBus-Gateway selbst ist an einer Schwestereinheit bestätigt (Lesen).',
+    ];
 
     public function Create()
     {

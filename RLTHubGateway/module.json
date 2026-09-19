@@ -5,7 +5,7 @@
   "vendor": "",
   "aliases": [
     "NRG-Stack RLTHub (ModBus-Gateway)",
-    "Lüftungsanlage Modbus über Symcon-Gateway (RS485/RTU)"
+    "Lüftungsanlage Modbus über ModBus-Gateway (RS485/RTU)"
   ],
   "url": "https://github.com/DG65/NRGRLTHub",
   "parentRequirements": [

@@ -17,6 +17,8 @@
 // glauben").
 // ===========================================================================
 
+require_once __DIR__ . '/RLTPanels.php';
+
 interface RLT_ModbusClientInterface
 {
     /** Function 3. Liefert 0-indiziertes Array der 16-Bit-Rohwerte oder null. */
@@ -681,6 +683,8 @@ class RLT_Drivers
 // ===========================================================================
 trait RLT_HubTrait
 {
+    use RLT_PanelTrait;
+
     private $rltDriver = null;
 
     abstract protected function rltClient(): RLT_ModbusClientInterface;
@@ -701,12 +705,14 @@ trait RLT_HubTrait
         $this->RegisterPropertyInteger('PollInterval', 60);
 
         $this->RegisterAttributeInteger('LastSeenAt', 0);
+        $this->rltPanelCreate();
 
         $this->RegisterTimer('ReadValuesTimer', 0, static::PREFIX . '_ReadValues($_IPS[\'TARGET\']);');
     }
 
     protected function rltApply(): void
     {
+        $this->rltAdoptDismissFromSibling();
         $this->rltCreateProfiles();
 
         $pos = 0;
@@ -715,7 +721,7 @@ trait RLT_HubTrait
         }
         $this->rltRegisterVar(['lastSeenAt', 'Zuletzt aktualisiert', 'I', '~UnixTimestamp', false], $pos);
 
-        if (!$this->ReadPropertyBoolean('Active')) {
+        if (!(bool)$this->ReadPropertyBoolean('Active')) {
             $this->SetTimerInterval('ReadValuesTimer', 0);
             $this->SetStatus(104);
             return;
@@ -724,7 +730,7 @@ trait RLT_HubTrait
         // Ein fehlendes Gateway meldet ReadValues() je Zyklus selbst (201),
         // der Timer muss dafür weiterlaufen; nur eine unvollständige
         // Verbindung (104) hält ihn an.
-        $this->SetTimerInterval('ReadValuesTimer', $status === 104 ? 0 : max(5, $this->ReadPropertyInteger('PollInterval')) * 1000);
+        $this->SetTimerInterval('ReadValuesTimer', $status === 104 ? 0 : max(5, (int)$this->ReadPropertyInteger('PollInterval')) * 1000);
         $this->SetStatus($status);
     }
 
@@ -741,63 +747,86 @@ trait RLT_HubTrait
                 $options[] = ['caption' => $def['caption'], 'value' => $key];
             }
         }
-        $device = $this->ReadPropertyString('Device');
-        $driver = $this->rltDriver();
+        $device = (string)$this->ReadPropertyString('Device');
         $notes = [];
-        foreach ($driver->getNotes() as $line) {
+        foreach ($this->rltDriver()->getNotes() as $line) {
             $notes[] = ['type' => 'Label', 'caption' => $line];
         }
 
         $libraryInfo = @json_decode((string)@file_get_contents(__DIR__ . '/../library.json'), true);
         $version = (is_array($libraryInfo) && isset($libraryInfo['version'])) ? (string)$libraryInfo['version'] : '?';
 
-        $form = [
-            'elements' => [
-                ['type' => 'Label', 'caption' => 'RLTHub — Raumlufttechnische Anlagen (RLT/KWL), herstellerübergreifend.'],
-                ['type' => 'CheckBox', 'name' => 'Active', 'caption' => 'Kommunikation aktiv'],
-                ['type' => 'ValidationTextBox', 'name' => 'Location', 'caption' => 'Bezeichnung / Standort (optional)'],
-                [
-                    'type'     => 'Select',
-                    'name'     => 'Device',
-                    'caption'  => 'Gerätetyp',
-                    'options'  => $options,
-                    'onChange' => static::PREFIX . '_OnChangeDevice($id, $Device);',
-                ],
-                [
-                    'type'    => 'Label',
-                    'name'    => 'DeviceConfidence',
-                    'caption' => 'ℹ️ ' . (RLT_Drivers::DRIVERS[$device]['confidence'] ?? ''),
-                ],
-                [
-                    'type'     => 'ExpansionPanel',
-                    'caption'  => '🔌 Verbindung',
-                    'expanded' => true,
-                    'items'    => array_merge($this->rltConnectionItems(), [
-                        [
-                            'type'    => 'Select',
-                            'name'    => 'AddressBase',
-                            'caption' => 'Adress-Basis der Registerliste',
-                            'options' => [
-                                ['caption' => 'automatisch (Vorgabe des Gerätetyps)', 'value' => 'auto'],
-                                ['caption' => 'Doku-Adresse − 1 = Wire-Adresse (1-basierte Liste)', 'value' => 'one'],
-                                ['caption' => 'Doku-Adresse = Wire-Adresse', 'value' => 'zero'],
-                            ],
-                        ],
-                        ['type' => 'NumberSpinner', 'name' => 'PollInterval', 'caption' => 'Abfragetakt', 'minimum' => 5, 'maximum' => 3600, 'suffix' => ' s'],
-                        ['type' => 'Button', 'caption' => '🔎  Verbindung jetzt testen', 'onClick' => 'echo ' . static::PREFIX . '_TestConnection($id);'],
-                    ]),
-                ],
-                [
-                    'type'     => 'ExpansionPanel',
-                    'caption'  => '📖 Dokumentation & Hilfe',
-                    'expanded' => false,
-                    'items'    => array_merge([
-                        ['type' => 'Label', 'caption' => 'RLTHub Version ' . $version . ' — noch ohne echte Hardware verifiziert.'],
-                        ['type' => 'Label', 'caption' => 'Liefert den Cross-Modul-Vertrag Type=>\'ventilation\' (contractVersion 1.0, mit EMS abgestimmt, siehe SUITE.md). Rein lesend — keine aktive Steuerung.'],
-                    ], $notes),
+        $transportNote = static::TRANSPORT === 'rtu'
+            ? 'RS485/Modbus RTU läuft über Symcons ModBus-Gateway (Serial Port → ModBus Gateway → diese Instanz). Das gilt auch für den eingebauten RS485-Port einer Symbox — der ist kein externes Gateway und nur so erreichbar. Anlagen mit Modbus TCP bindest du mit dem Modul RLTHub an.'
+            : 'Diese Instanz spricht Modbus TCP. Ein externer RTU→TCP-Konverter (z. B. für RS485-Geräte) geht damit ebenfalls. Der eingebaute RS485-Port einer Symbox ist dagegen kein externes Gateway — dafür gibt es das Modul RLTHubGateway.';
+
+        $addressHelp = [
+            'type'    => 'PopupButton',
+            'caption' => 'Was bedeutet die Adress-Basis der Registerliste?',
+            'width'   => '480px',
+            'popup'   => [
+                'caption' => 'Adress-Basis der Registerliste',
+                'items'   => [
+                    ['type' => 'Label', 'caption' => 'Herstellerlisten zählen Register oft ab 1 (Modicon-Konvention), auf der Leitung zählt Modbus aber ab 0. Ob die Adresse aus der Liste also noch um 1 verringert werden muss, hängt vom Gerät ab.'],
+                    ['type' => 'Label', 'caption' => '„automatisch" nimmt die Vorgabe des gewählten Gerätetyps. Liefert die Anlage Nullwerte, Fehler oder erkennbar falsche Werte, stelle testweise die andere Auswahl ein und klicke auf „Verbindung jetzt testen".'],
+                    ['type' => 'Label', 'caption' => 'Ob die Vorgabe eines Gerätetyps stimmt, steht im Panel „Dokumentation & Hilfe".'],
                 ],
             ],
-            'status' => [
+        ];
+
+        $fach = [
+            ['type' => 'CheckBox', 'name' => 'Active', 'caption' => 'Kommunikation aktiv'],
+            ['type' => 'ValidationTextBox', 'name' => 'Location', 'caption' => 'Bezeichnung / Standort (optional)'],
+            ['type' => 'Label', 'caption' => 'ℹ️ Die Vorbelegung des Gerätetyps ist nur der erste Eintrag der Liste — bitte den zur eigenen Anlage passenden wählen.'],
+            [
+                'type'     => 'Select',
+                'name'     => 'Device',
+                'caption'  => 'Gerätetyp',
+                'options'  => $options,
+                'onChange' => static::PREFIX . '_OnChangeDevice($id, $Device);',
+            ],
+            [
+                'type'    => 'Label',
+                'name'    => 'DeviceConfidence',
+                'caption' => 'ℹ️ ' . (RLT_Drivers::DRIVERS[$device]['confidence'] ?? ''),
+            ],
+            [
+                'type'     => 'ExpansionPanel',
+                'caption'  => '🔌 Verbindung',
+                'expanded' => true,
+                'items'    => array_merge($this->rltConnectionItems(), [
+                    [
+                        'type'    => 'Select',
+                        'name'    => 'AddressBase',
+                        'caption' => 'Adress-Basis der Registerliste',
+                        'options' => [
+                            ['caption' => 'automatisch (Vorgabe des Gerätetyps)', 'value' => 'auto'],
+                            ['caption' => 'Doku-Adresse − 1 = Wire-Adresse (1-basierte Liste)', 'value' => 'one'],
+                            ['caption' => 'Doku-Adresse = Wire-Adresse', 'value' => 'zero'],
+                        ],
+                    ],
+                    $addressHelp,
+                    ['type' => 'NumberSpinner', 'name' => 'PollInterval', 'caption' => 'Abfragetakt', 'minimum' => 5, 'maximum' => 3600, 'suffix' => ' s'],
+                    ['type' => 'Button', 'caption' => '🔎  Verbindung jetzt testen', 'onClick' => 'echo ' . static::PREFIX . '_TestConnection($id);'],
+                ]),
+            ],
+        ];
+
+        $doku = [
+            'type'     => 'ExpansionPanel',
+            'caption'  => '📖 Dokumentation & Hilfe',
+            'expanded' => false,
+            'items'    => array_merge([
+                ['type' => 'Label', 'caption' => static::MODULE_NAME . ' Version ' . $version . ' — noch an keiner echten Anlage verifiziert.'],
+                ['type' => 'Label', 'caption' => 'Liefert den NRG-Stack-Vertrag Type=>\'ventilation\' (contractVersion 1.0, mit dem EMS abgestimmt). Rein lesend — das Modul steuert die Anlage nicht.'],
+                ['type' => 'Label', 'caption' => $transportNote],
+                ['type' => 'Label', 'caption' => 'Schlägt eine Abfrage fehl, steht der Instanzstatus auf „Verbindungsfehler" und einmalig eine Meldung im Symcon-Protokoll. „Verbindung jetzt testen" zeigt den Grund.'],
+            ], $notes),
+        ];
+
+        $form = [
+            'elements' => array_merge($this->rltPanelsTop(), [$doku], $fach, $this->rltPanelsBottom()),
+            'status'   => [
                 ['code' => 104, 'icon' => 'inactive', 'caption' => 'Inaktiv bzw. Verbindung unvollständig.'],
                 ['code' => 102, 'icon' => 'active',   'caption' => 'Aktiv.'],
                 ['code' => 201, 'icon' => 'error',    'caption' => 'Verbindungsfehler — Gerät bzw. ModBus-Gateway nicht erreichbar.'],
@@ -810,22 +839,48 @@ trait RLT_HubTrait
     // Lesezyklus
     // -----------------------------------------------------------------------
 
-    public function ReadValues()
+    /** @return array{0:bool,1:RLT_ModbusClientInterface} */
+    private function rltReadCycle(): array
     {
-        if (!$this->ReadPropertyBoolean('Active') || $this->rltConnectionStatus() === 104) {
-            return;
-        }
         $mb = $this->rltClient();
         $ok = $this->rltDriver()->readValues($mb, $this);
         $mb->close();
+        return [$ok, $mb];
+    }
+
+    private function rltMarkSeen(): void
+    {
+        $now = time();
+        $this->WriteAttributeInteger('LastSeenAt', $now);
+        $this->SetVarInteger('lastSeenAt', $now);
+    }
+
+    private function rltFailureReason($mb): string
+    {
+        $reason = (is_object($mb) && property_exists($mb, 'lastError')) ? (string)$mb->lastError : '';
+        return $reason !== '' ? ' (' . $reason . ')' : '';
+    }
+
+    public function ReadValues()
+    {
+        if (IPS_GetKernelRunlevel() !== KR_READY) {
+            return;
+        }
+        if (!(bool)$this->ReadPropertyBoolean('Active') || $this->rltConnectionStatus() === 104) {
+            return;
+        }
+        $previous = $this->GetStatus();
+        [$ok, $mb] = $this->rltReadCycle();
 
         if ($ok) {
-            $now = time();
-            $this->WriteAttributeInteger('LastSeenAt', $now);
-            $this->SetVarInteger('lastSeenAt', $now);
+            $this->rltMarkSeen();
             $this->SetStatus(102);
-        } else {
-            $this->SetStatus(201);
+            return;
+        }
+        $this->SetStatus(201);
+        // Dauerhaft loggen, aber nur beim Übergang — nicht bei jedem Takt.
+        if ($previous !== 201) {
+            IPS_LogMessage(static::MODULE_NAME, 'Instanz #' . $this->InstanceID . ': Anlage nicht erreichbar oder keine gültige Antwort' . $this->rltFailureReason($mb) . '.');
         }
     }
 
@@ -834,20 +889,15 @@ trait RLT_HubTrait
         if ($this->rltConnectionStatus() === 104) {
             return '❌ Verbindung unvollständig — Host/Port/Unit-ID bzw. ModBus-Gateway prüfen.';
         }
-        $mb = $this->rltClient();
-        $ok = $this->rltDriver()->readValues($mb, $this);
-        $mb->close();
+        [$ok, $mb] = $this->rltReadCycle();
 
         if ($ok) {
-            $now = time();
-            $this->WriteAttributeInteger('LastSeenAt', $now);
-            $this->SetVarInteger('lastSeenAt', $now);
+            $this->rltMarkSeen();
             $this->SetStatus(102);
             return '✅ Verbindung erfolgreich, Werte aktualisiert.';
         }
         $this->SetStatus(201);
-        $detail = (is_object($mb) && property_exists($mb, 'lastError') && $mb->lastError !== '') ? ' (' . $mb->lastError . ')' : '';
-        return '❌ Verbindung fehlgeschlagen oder keine gültige Antwort' . $detail . ' — Verbindung, Adress-Basis und Gerätetyp prüfen.';
+        return '❌ Verbindung fehlgeschlagen oder keine gültige Antwort' . $this->rltFailureReason($mb) . ' — Verbindung, Adress-Basis und Gerätetyp prüfen.';
     }
 
     // -----------------------------------------------------------------------
@@ -863,7 +913,7 @@ trait RLT_HubTrait
         $id = function (string $ident) use ($provided): int {
             return in_array($ident, $provided, true) ? $this->VarID($ident) : 0;
         };
-        $location = $this->ReadPropertyString('Location');
+        $location = (string)$this->ReadPropertyString('Location');
         return [[
             'contractVersion'          => '1.0',
             'instanceID'               => $this->InstanceID,
@@ -880,8 +930,8 @@ trait RLT_HubTrait
             'fan1FlowID'               => $id('fan1Flow'),
             'fan2FlowID'               => $id('fan2Flow'),
             'faultSummaryID'           => $id('faultSummary'),
-            'lastSeenAt'               => $this->ReadAttributeInteger('LastSeenAt'),
-            'pollInterval'             => $this->ReadPropertyInteger('PollInterval'),
+            'lastSeenAt'               => (int)$this->ReadAttributeInteger('LastSeenAt'),
+            'pollInterval'             => (int)$this->ReadPropertyInteger('PollInterval'),
         ]];
     }
 
@@ -916,7 +966,7 @@ trait RLT_HubTrait
     /** Doku-Adresse -> Wire-Adresse laut Property 'AddressBase' bzw. Treiber-Vorgabe. */
     public function WireAddress(int $documented): int
     {
-        $base = $this->ReadPropertyString('AddressBase');
+        $base = (string)$this->ReadPropertyString('AddressBase');
         $oneBased = $base === 'one' || ($base !== 'zero' && $this->rltDriver()->addressOneBasedDefault());
         return $oneBased ? $documented - 1 : $documented;
     }
@@ -931,7 +981,7 @@ trait RLT_HubTrait
     private function rltDriver(): RLT_VentilationDriverInterface
     {
         if ($this->rltDriver === null) {
-            $this->rltDriver = RLT_Drivers::create($this->ReadPropertyString('Device'));
+            $this->rltDriver = RLT_Drivers::create((string)$this->ReadPropertyString('Device'));
         }
         return $this->rltDriver;
     }
