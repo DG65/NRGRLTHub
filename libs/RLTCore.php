@@ -732,6 +732,9 @@ trait RLT_HubTrait
         // Verbindung (104) hält ihn an.
         $this->SetTimerInterval('ReadValuesTimer', $status === 104 ? 0 : max(5, (int)$this->ReadPropertyInteger('PollInterval')) * 1000);
         $this->SetStatus($status);
+        if ($status === 201) {
+            IPS_LogMessage(static::MODULE_NAME, 'Instanz #' . $this->InstanceID . ': Kein ModBus-Gateway verbunden — im Instanzformular oben unter „Gateway" eines wählen.');
+        }
     }
 
     public function OnChangeDevice(string $device): void
@@ -870,6 +873,15 @@ trait RLT_HubTrait
             return;
         }
         $previous = $this->GetStatus();
+        // Kein ModBus-Gateway verbunden: gar nicht erst abfragen, sondern den
+        // wahren Grund melden (sonst steht „Regler antwortet nicht“ im Protokoll).
+        if ($this->rltConnectionStatus() === 201) {
+            $this->SetStatus(201);
+            if ($previous !== 201) {
+                IPS_LogMessage(static::MODULE_NAME, 'Instanz #' . $this->InstanceID . ': Kein ModBus-Gateway verbunden — im Instanzformular oben unter „Gateway" eines wählen.');
+            }
+            return;
+        }
         [$ok, $mb] = $this->rltReadCycle();
 
         if ($ok) {
@@ -887,7 +899,11 @@ trait RLT_HubTrait
     public function TestConnection(): string
     {
         if ($this->rltConnectionStatus() === 104) {
-            return '❌ Verbindung unvollständig — Host/Port/Unit-ID bzw. ModBus-Gateway prüfen.';
+            return '❌ Verbindung unvollständig — Host/Port/Unit-ID prüfen.';
+        }
+        if ($this->rltConnectionStatus() === 201) {
+            $this->SetStatus(201);
+            return '❌ Kein ModBus-Gateway verbunden — oben unter „Gateway" ein ModBus-Gateway wählen (Serial Port → ModBus Gateway).';
         }
         [$ok, $mb] = $this->rltReadCycle();
 

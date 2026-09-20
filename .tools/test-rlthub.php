@@ -355,12 +355,15 @@ echo "6) RLTHubGateway: Parent-Erkennung, Zyklus über das Gateway\n";
 class TestGw extends RLTHubGateway {}
 $gwm = new TestGw(600);
 $gwm->Create();
+$GLOBALS['RLT_LOG'] = [];
 $gwm->ApplyChanges();
 check('ohne Gateway: Status 201, Timer läuft trotzdem (Gateway kann später kommen)', $gwm->status === 201 && $gwm->timers['ReadValuesTimer']['interval'] === 60000);
 check('Timer mit Gateway-Präfix', $gwm->timers['ReadValuesTimer']['script'] === 'RLTGW_ReadValues($_IPS[\'TARGET\']);');
 check('Standardgerät Proxon FWT', $gwm->ReadPropertyString('Device') === 'proxon_fwt');
-$gwm->ReadValues();
+$gwm->ReadValues(); $gwm->ReadValues();
 check('ohne Parent kein Absturz, Status bleibt 201', $gwm->status === 201);
+check('ohne Parent: wahrer Grund im Protokoll (einmalig), nicht „Regler antwortet nicht“', count($GLOBALS['RLT_LOG']) === 1 && strpos($GLOBALS['RLT_LOG'][0][1], 'Kein ModBus-Gateway verbunden') !== false, json_encode($GLOBALS['RLT_LOG'], JSON_UNESCAPED_UNICODE));
+check('ohne Parent: Verbindungstest nennt den wahren Grund', strpos($gwm->TestConnection(), 'Kein ModBus-Gateway verbunden') !== false && strpos($gwm->TestConnection(), 'antwortet nicht') === false);
 $GLOBALS['RLT_INSTANCES'][600] = ['ConnectionID' => 601];
 $GLOBALS['RLT_INSTANCES'][601] = ['module' => '{A5F663AB-C400-4FE5-B207-4D67CC030564}', 'props' => ['DeviceID' => 41]];
 $gwm->parentFn = function (string $json) {
