@@ -540,9 +540,17 @@ unset($GLOBALS['RLT_INSTANCES'][920], $GLOBALS['RLT_INSTANCES'][921], $GLOBALS['
 
 // Forum-Hinweis: ohne echte URL nur Text (keine erfundene Verknüpfung), mit URL echte Link-Schaltfläche
 $forumEl = function ($m) { foreach (json_decode($m->GetConfigurationForm(), true)['elements'] as $e) { if (($e['name'] ?? '') === 'ForumHintPanel') { return $e; } } return null; };
-$h930 = new RLTHub(930); $h930->Create();
+class TestHubNoForum extends RLTHub { public const FORUM_THREAD_URL = ''; }
+$h930 = new TestHubNoForum(930); $h930->Create();
 $f0 = $forumEl($h930);
-check("Forum-Hinweis ohne veröffentlichten Thread: nur Text, keine Platzhalter-Verknüpfung", $f0 !== null && count(array_filter($f0['items'], function ($i) { return isset($i['link']); })) === 0);
+check("Forum-Hinweis ohne URL (leer): nur Text, keine Platzhalter-Verknüpfung", $f0 !== null && count(array_filter($f0['items'], function ($i) { return isset($i['link']); })) === 0);
+$realUrl = 'https://community.symcon.de/t/modul-nrg-stack-rlthub-lueftungsanlagen-rlt-kwl-per-modbus-anbinden-robatherm-truecontrol-proxon-fwt/144442';
+check("Forum-Thread-URL ist in allen drei Modulen eingetragen und identisch", RLTHub::FORUM_THREAD_URL === $realUrl && RLTHubGateway::FORUM_THREAD_URL === $realUrl && RLTHubDiscovery::FORUM_THREAD_URL === $realUrl);
+foreach (['RLTHub' => new RLTHub(932), 'RLTHubGateway' => new RLTHubGateway(933), 'RLTHubDiscovery' => new RLTHubDiscovery(934)] as $nm => $mm) {
+    $mm->Create();
+    $fe = $forumEl($mm);
+    check("$nm: Forum-Hinweis mit Schaltfläche 'Zum Forums-Thread' (onClick=echo <URL>, link=true)", $fe !== null && count(array_filter($fe['items'], function ($i) use ($realUrl) { return ($i['link'] ?? false) === true && $i['onClick'] === "echo '" . $realUrl . "';" && $i['caption'] === 'Zum Forums-Thread'; })) === 1);
+}
 class TestHubForum extends RLTHub { public const FORUM_THREAD_URL = 'https://community.symcon.de/t/beispiel/1'; }
 $fm = new TestHubForum(931); $fm->Create();
 $f1 = $forumEl($fm);

@@ -26,8 +26,7 @@ class RLTHubDiscovery extends IPSModule
     public const MODULE_GUID = '{CC2C38CA-7675-4F27-B993-7B68187B8879}';
 
     public const NEWS_VERSION = '0.3.0';
-    // Der Forum-Thread existiert noch nicht — solange leer, zeigt der Hinweis nur Text.
-    public const FORUM_THREAD_URL = '';
+    public const FORUM_THREAD_URL = 'https://community.symcon.de/t/modul-nrg-stack-rlthub-lueftungsanlagen-rlt-kwl-per-modbus-anbinden-robatherm-truecontrol-proxon-fwt/144442';
     public const LICENSE_URL = 'https://github.com/DG65/NRGRLTHub/blob/beta/LICENSE';
     public const PURPOSE = [
         'Durchsucht dein lokales Netz nach Lüftungsanlagen mit Modbus TCP und legt auf Klick eine vorausgefüllte RLTHub-Instanz an — IP-Adresse, Port, Unit-ID und Gerätetyp müssen nicht von Hand eingetragen werden.',

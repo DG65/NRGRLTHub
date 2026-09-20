@@ -15,6 +15,7 @@
 - README mit Badges, CI-Workflow „Check Style" (Syntaxprüfung und Prüfstand).
 - Der Forum-Thread existiert noch nicht: der Hinweis zeigt bis dahin nur Text, keine Verknüpfung.
 - Build 4: Fehlt das ModBus-Gateway, nennt der Verbindungstest und das Symcon-Protokoll jetzt den wahren Grund (statt „Regler antwortet nicht"). Gefunden bei der Prüfung am Live-IPS.
+- Build 5: Forum-Thread eingetragen, der Forum-Hinweis im Formular verlinkt jetzt auf den Beitrag.
 
 ## 0.2.0 (19.09.2026)
 

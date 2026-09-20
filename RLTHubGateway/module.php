@@ -24,8 +24,7 @@ class RLTHubGateway extends IPSModule
     public const TRANSPORT = 'rtu';
 
     public const NEWS_VERSION = '0.3.0';
-    // Der Forum-Thread existiert noch nicht — solange leer, zeigt der Hinweis nur Text.
-    public const FORUM_THREAD_URL = '';
+    public const FORUM_THREAD_URL = 'https://community.symcon.de/t/modul-nrg-stack-rlthub-lueftungsanlagen-rlt-kwl-per-modbus-anbinden-robatherm-truecontrol-proxon-fwt/144442';
     public const LICENSE_URL = 'https://github.com/DG65/NRGRLTHub/blob/beta/LICENSE';
     public const PURPOSE = [
         'Liest eine Lüftungsanlage über RS485/Modbus RTU aus — mit Symcons eigenem ModBus-Gateway (Serial Port → ModBus Gateway → diese Instanz), z. B. an einem USB-RS485-Dongle am Symcon-Host oder am RS485-Anschluss einer Symbox.',
