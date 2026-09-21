@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.0 (21.09.2026)
+
+- Neuer Gerätetyp **Pichler LG (ES2020-Steuerung, z. B. LG 350)**, Modbus RTU über RLTHubGateway und Modbus TCP
+  (ab Firmware 1.6) über RLTHub. Quelle ist die öffentliche Registerliste des Herstellers (Modbus-Liste ES2020,
+  Firmware v2.1.0); noch an keiner Anlage geprüft. Temperaturen laut Liste °C = (Rohwert − 1000) ÷ 10, also auch
+  unter 0 °C.
+- Zuordnungen: Außen-, Zu-, Ablufttemperatur, berechneter Wirkungsgrad, Zu-/Abluft-Volumenstrom (m³/h), Summenstörmeldung.
+  Die Filter-Restzeit ist keine Betriebsstundenzahl: `filterRuntimeHoursID` bleibt leer, Restzeit und Filtermeldung sind
+  eigene Variablen. CO2 fehlt vorerst (Sensor nicht erkennbar).
+- Die Suche erkennt Pichler-Anlagen über das Modellregister (LG 350/450/740) und plausible Temperaturen.
+- Neues Variablenprofil `RLT.Flow` (m³/h).
+
 ## 0.3.2 (21.09.2026)
 
 - Verbund-Konvention „Verbindungen im Formular sichtbar machen" (SUITE.md, 21.09.2026): Im Panel „Verbindung"

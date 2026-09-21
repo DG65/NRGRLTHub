@@ -23,7 +23,7 @@ class RLTHubGateway extends IPSModule
     public const DEFAULT_DEVICE = 'proxon_fwt';
     public const TRANSPORT = 'rtu';
 
-    public const NEWS_VERSION = '0.3.1';
+    public const NEWS_VERSION = '0.4.0';
     public const FORUM_THREAD_URL = 'https://community.symcon.de/t/modul-nrg-stack-rlthub-lueftungsanlagen-rlt-kwl-per-modbus-anbinden-robatherm-truecontrol-proxon-fwt/144442';
     public const LICENSE_URL = 'https://github.com/DG65/NRGRLTHub/blob/beta/LICENSE';
     public const PURPOSE = [
@@ -32,8 +32,8 @@ class RLTHubGateway extends IPSModule
         'Das Modul liest nur — es steuert die Anlage nicht.',
     ];
     public const NEWS = [
-        '• ✅ Proxon FWT 2.0 an einer echten Anlage geprüft (21.09.2026, Rohwert gegen Display): Adressen, Temperaturen (Rohwert ÷ 100), Störung 0 = keine Störung, Filterstunden und Betriebsart stimmen. Die Excel-Nummer der Registerliste ist direkt die Adresse am Gateway.',
-        '• ⚠️ Noch offen: Temperaturen unter 0 °C (die Liste nennt keinen Offset) und die Bedeutung der Störungscodes. Details im Panel „Dokumentation & Hilfe".',
+        '• 🆕 Neuer Gerätetyp: Pichler LG mit ES2020-Steuerung (z. B. LG 350) über Modbus RTU (Werk: 19200 Baud, Parität gerade, Adresse 20). Temperaturen, berechneter WRG-Wirkungsgrad, Zu-/Abluft-Volumenstrom in m³/h, Summenstörmeldung, Filtermeldung und Restzeit bis zum Filterwechsel.',
+        '• ⚠️ Noch an keiner Pichler-Anlage geprüft (Adress-Basis, Zuordnung der Felder). Details im Panel „Dokumentation & Hilfe“. Testberichte sind willkommen.',
     ];
 
     public function Create()

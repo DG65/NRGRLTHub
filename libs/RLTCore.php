@@ -7,7 +7,7 @@
 //   RLT_ModbusTcpClient / RLT_ModbusGatewayClient — Verbindungsfassade
 //     (SUITE.md 9j), beide implementieren RLT_ModbusClientInterface.
 //   RLT_VentilationDriverInterface — Vertrag jedes Hersteller-Treibers.
-//   RLT_RobathermTrueControlDriver, RLT_ProxonFwtDriver — Treiber.
+//   RLT_RobathermTrueControlDriver, RLT_ProxonFwtDriver, RLT_PichlerLgDriver — Treiber.
 //   RLT_Drivers — Treiberliste (Bezeichnung, Transport, Hinweis).
 //   RLT_HubTrait — gemeinsame Instanzlogik von RLTHub und RLTHubGateway,
 //     implementiert den `Type=>'ventilation'`-Vertrag (SUITE.md, 1.0).
@@ -675,6 +675,150 @@ class RLT_ProxonFwtDriver implements RLT_VentilationDriverInterface
     }
 }
 
+// ===========================================================================
+// RLT_PichlerLgDriver — Pichler LG-Serie mit ES2020-Steuerung (LG 350/450/740/
+// 1000), Modbus RTU (Werk: 19200 Baud, Parität gerade, Adresse 20) und ab
+// Firmware 1.6 auch Modbus TCP (dort am Gerät einzuschalten).
+//
+// Quelle: „Modbus-Liste ES2020, Firmware v2.1.0" von pichlerluft.de (öffentlich
+// verlinkt). Alle Werte Input-Register (Function 4), 16 Bit ohne Vorzeichen.
+// Temperaturen: °C = (Rohwert + Offset) / 10^Dezimalstellen = (Rohwert − 1000) / 10
+// (Bereich −30 … 130 °C), also anders als die FWT auch unter 0 °C definiert.
+//
+// ⚠️ Noch an KEINER Anlage geprüft. Ungeprüft sind insbesondere die Adress-Basis
+// (die Liste nennt Adressen, sagt aber nicht, ob es Adressen am Gateway sind;
+// Vorgabe hier: Listennummer = Adresse am Gateway) und die Zuordnung der
+// Vertragsfelder.
+//
+// Bewusste Zuordnungen (mit Dietmar 21.09.2026 abgestimmt):
+//  - Filter: Register 50 ist die RESTZEIT bis zur Filterwechselmeldung (h), keine
+//    Betriebsstunden. `filterRuntimeHoursID` bleibt deshalb leer; Restzeit und
+//    Filtermeldung (Register 41) sind eigene Variablen ohne Vertragsfeld.
+//  - Volumenstrom: Zu-/Abluft-Istwert in m³/h (Register 46/47) auf
+//    fan1Flow/fan2Flow, die Einheit steht im Variablenprofil (Robatherm liefert
+//    dort einen Faktor in %).
+//  - CO2 fehlt vorerst: die Register (89, 44, 5212) gibt es, ob ein Sensor
+//    angeschlossen ist, weiß das Modul nicht — sonst stünde eine falsche 0 ppm da.
+// ===========================================================================
+class RLT_PichlerLgDriver implements RLT_VentilationDriverInterface
+{
+    private const IN_MODEL            = 25;  // LG_Modell (0 = LG350, 1 = LG450, 2 = LG740)
+    private const IN_FAULT_SUMMARY    = 29;  // Relais_H12A Summenstörmeldung (0/1)
+    private const IN_TEMPS            = 30;  // 30..33: T1 Außen, T2 Fortluft, T3 Abluft, T4 Zuluft
+    private const IN_FILTER_ALARM     = 41;  // Relais_H12B Filtermeldung (0/1)
+    private const IN_FLOW_SUPPLY      = 46;  // 46/47: Zuluft-/Abluft-Volumenstrom Istwert (m³/h)
+    private const IN_STATUS           = 48;  // Betriebsstatus (0 Start, 1 Standby, 2 Anlauf, 3 Betrieb, 4 Nachlauf, 5 Standby Powersafe, 6 Test)
+    private const IN_FILTER_REMAINING = 50;  // Restzeit bis Filterwechselmeldung (h)
+    private const TEMP_OFFSET         = -1000;
+    private const MODELS              = [0 => 'LG 350', 1 => 'LG 450', 2 => 'LG 740'];
+
+    public function addressOneBasedDefault(): bool
+    {
+        return false;
+    }
+
+    public function getBaseVars(): array
+    {
+        return [
+            ['outsideTemp',            'Temperatur Außenluft (T1)',       'F', 'NRG.Celsius', true],
+            ['supplyTemp',             'Temperatur Zuluft (T4)',          'F', 'NRG.Celsius', true],
+            ['extractTemp',            'Temperatur Abluft (T3)',          'F', 'NRG.Celsius', true],
+            ['heatRecoveryEfficiency', 'WRG-Wirkungsgrad (berechnet)',    'F', 'NRG.Percent', true],
+            ['fan1Flow',               'Zuluft-Volumenstrom',             'F', 'RLT.Flow',    true],
+            ['fan2Flow',               'Abluft-Volumenstrom',             'F', 'RLT.Flow',    true],
+            ['faultSummary',           'Summenstörmeldung',               'B', '~Alert',      false],
+            ['filterAlarm',            'Filtermeldung',                   'B', '~Alert',      false],
+            ['filterHoursRemaining',   'Restzeit bis Filterwechsel',      'F', 'RLT.Hours',   false],
+            ['systemSwitch',           'Anlage in Betrieb',               'B', '',            false],
+        ];
+    }
+
+    public function getNotes(): array
+    {
+        return [
+            'Pichler LG-Serie mit ES2020-Steuerung (z. B. LG 350): Registerliste des Herstellers (Modbus-Liste ES2020, Firmware v2.1.0), noch an keiner Anlage geprüft. Modbus RTU (Werk: 19200 Baud, Parität gerade, Adresse 20) über RLTHubGateway; Modbus TCP ab Firmware 1.6 über RLTHub — dort muss Modbus TCP am Gerät erst eingeschaltet werden.',
+            'Temperaturen: °C = (Rohwert − 1000) ÷ 10 laut Liste, damit auch unter 0 °C darstellbar. Die Adress-Basis ist ungeprüft: Die Liste nennt Adressen, sagt aber nicht, ob es Adressen am Gateway sind. Vorgabe: Listennummer = Adresse am Gateway; bei Nullwerten oder Fehlern unter „Eigene Adress-Basis stattdessen verwenden" die andere Auswahl testen.',
+            'Filter: Die Liste liefert die Restzeit bis zur Filterwechselmeldung, keine Betriebsstunden. Das Vertragsfeld „Betriebsstunden Filter" bleibt deshalb leer; Restzeit und Filtermeldung stehen als eigene Variablen bereit.',
+            'Volumenstrom: Zu- und Abluft-Istwert in m³/h (bei Robatherm ein Faktor in %) — die Einheit steht im Variablenprofil. Luftqualität (CO2) fehlt vorerst: die Register gibt es, ob ein Sensor angeschlossen ist, ist aber nicht erkennbar.',
+            'Der WRG-Wirkungsgrad wird aus Außenluft-, Zuluft- und Ablufttemperatur berechnet. Ein Vorheizregister kann die Zulufttemperatur anheben und den Wert dann zu hoch erscheinen lassen.',
+        ];
+    }
+
+    private static function regToTemp(int $raw): float
+    {
+        return (($raw & 0xFFFF) + self::TEMP_OFFSET) / 10.0;
+    }
+
+    public function probe($mb): ?string
+    {
+        $addr = new RLT_ProbeAddress(false);
+        $model = $mb->readInput($addr->wire(self::IN_MODEL), 1);
+        if ($model === null || !isset($model[0]) || !isset(self::MODELS[$model[0]])) {
+            return null;
+        }
+        $t = $mb->readInput($addr->wire(self::IN_TEMPS), 4);
+        if ($t === null || count($t) < 4) {
+            return null;
+        }
+        $out = self::regToTemp($t[0]);
+        $ext = self::regToTemp($t[2]);
+        $sup = self::regToTemp($t[3]);
+        foreach ([$out, $ext, $sup] as $v) {
+            if ($v < -40.0 || $v > 80.0) {
+                return null;
+            }
+        }
+        return sprintf('%s: Außenluft %.1f °C, Zuluft %.1f °C, Abluft %.1f °C', self::MODELS[$model[0]], $out, $sup, $ext);
+    }
+
+    public function readValues($mb, $hub): bool
+    {
+        $ok = true;
+
+        $t = $mb->readInput($hub->WireAddress(self::IN_TEMPS), 4);
+        if ($t !== null && count($t) >= 4) {
+            $outside = self::regToTemp($t[0]);
+            $extract = self::regToTemp($t[2]);
+            $supply  = self::regToTemp($t[3]);
+            $hub->SetVarFloat('outsideTemp', $outside);
+            $hub->SetVarFloat('extractTemp', $extract);
+            $hub->SetVarFloat('supplyTemp', $supply);
+            $hub->SetVarFloat('heatRecoveryEfficiency', RLT_Decode::heatRecoveryEfficiency($outside, $supply, $extract));
+        } else {
+            $ok = false;
+        }
+
+        $fault = $mb->readInput($hub->WireAddress(self::IN_FAULT_SUMMARY), 1);
+        if ($fault !== null && isset($fault[0])) {
+            $hub->SetVarBoolean('faultSummary', ($fault[0] & 0xFFFF) !== 0);
+        } else {
+            $ok = false;
+        }
+
+        // Alles Weitere ist Zusatz: Fehlt es (z. B. ältere Firmware), bleibt der Zyklus gültig.
+        $flow = $mb->readInput($hub->WireAddress(self::IN_FLOW_SUPPLY), 2);
+        if ($flow !== null && count($flow) >= 2) {
+            $hub->SetVarFloat('fan1Flow', (float)($flow[0] & 0xFFFF));
+            $hub->SetVarFloat('fan2Flow', (float)($flow[1] & 0xFFFF));
+        }
+        $alarm = $mb->readInput($hub->WireAddress(self::IN_FILTER_ALARM), 1);
+        if ($alarm !== null && isset($alarm[0])) {
+            $hub->SetVarBoolean('filterAlarm', ($alarm[0] & 0xFFFF) !== 0);
+        }
+        $remaining = $mb->readInput($hub->WireAddress(self::IN_FILTER_REMAINING), 1);
+        if ($remaining !== null && isset($remaining[0])) {
+            $hub->SetVarFloat('filterHoursRemaining', (float)($remaining[0] & 0xFFFF));
+        }
+        $status = $mb->readInput($hub->WireAddress(self::IN_STATUS), 1);
+        if ($status !== null && isset($status[0])) {
+            // 2 = Anlauf, 3 = Betrieb, 4 = Nachlauf gelten als „in Betrieb“.
+            $hub->SetVarBoolean('systemSwitch', in_array($status[0] & 0xFFFF, [2, 3, 4], true));
+        }
+
+        return $ok;
+    }
+}
+
 class RLT_Drivers
 {
     public const DRIVERS = [
@@ -683,6 +827,12 @@ class RLT_Drivers
             'caption'    => 'Robatherm TrueControl',
             'transports' => ['tcp'],
             'confidence' => 'Registerliste einer einzelnen Anlage, noch nicht an Hardware verifiziert.',
+        ],
+        'pichler_lg' => [
+            'class'      => 'RLT_PichlerLgDriver',
+            'caption'    => 'Pichler LG (ES2020, z. B. LG 350)',
+            'transports' => ['tcp', 'rtu'],
+            'confidence' => 'Registerliste des Herstellers (öffentlich), noch an keiner Anlage geprüft. Ungeprüft: Adress-Basis sowie die Zuordnung von Filter (Restzeit) und Volumenstrom (m³/h).',
         ],
         'proxon_fwt' => [
             'class'      => 'RLT_ProxonFwtDriver',
@@ -1177,7 +1327,7 @@ trait RLT_HubTrait
             }
         }
         // Modulspezifisch (RLTHub bleibt Eigentümer).
-        foreach ([['RLT.Ppm', ' ppm', 0], ['RLT.Hours', ' h', 0]] as [$name, $suffix, $digits]) {
+        foreach ([['RLT.Ppm', ' ppm', 0], ['RLT.Hours', ' h', 0], ['RLT.Flow', ' m³/h', 0]] as [$name, $suffix, $digits]) {
             if (!IPS_VariableProfileExists($name)) {
                 IPS_CreateVariableProfile($name, VARIABLETYPE_FLOAT);
             }

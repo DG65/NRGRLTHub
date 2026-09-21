@@ -1,7 +1,7 @@
 # NRG-Stack RLTHub
 
 ![Symcon](https://img.shields.io/badge/Symcon-PHPModul-blue)
-![Modul Version](https://img.shields.io/badge/Modul_Version-0.3.2-blue)
+![Modul Version](https://img.shields.io/badge/Modul_Version-0.4.0-blue)
 ![Symcon Version](https://img.shields.io/badge/Symcon_Version-9.0%2B-blue)
 ![License](https://img.shields.io/badge/License-PolyForm_Noncommercial_1.0.0-lightgrey)
 [![Check Style](https://github.com/DG65/NRGRLTHub/actions/workflows/check-style.yml/badge.svg)](https://github.com/DG65/NRGRLTHub/actions/workflows/check-style.yml)
@@ -15,7 +15,7 @@ und [NRGChargerHub](https://github.com/DG65/NRGChargerHub).
 
 ## Status
 
-**0.3.2 (Beta).** Proxon FWT 2.0 ist an einer echten Anlage geprüft (Temperaturen über 0 °C, Störung 0,
+**0.4.0 (Beta).** Proxon FWT 2.0 ist an einer echten Anlage geprüft (Temperaturen über 0 °C, Störung 0,
 Filterstunden, Betriebsart), Robatherm TrueControl noch an keiner. Die Prüfungen laufen zusätzlich gegen
 Test-Modbus-Server und einen IPSModule-Nachbau; der Verifikationsstand steht je Gerätetyp im Formular
 und im Quellcode.
@@ -33,6 +33,7 @@ und im Quellcode.
 | Gerätetyp | Transport | Stand |
 |---|---|---|
 | Robatherm TrueControl | TCP | Registerliste einer einzelnen Anlage (TrueControl wird je Projekt parametriert), Skalierung und Adress-Basis unverifiziert |
+| Pichler LG (ES2020, z. B. LG 350) | TCP (ab FW 1.6) und RTU | Öffentliche Herstellerliste, noch an keiner Anlage geprüft (Adress-Basis, Zuordnung von Filter und Volumenstrom) |
 | Proxon FWT 2.0 (Zimmermann) | RTU | An einer echten FWT geprüft (21.09.2026); offen: Temperaturen unter 0 °C, Störungscodes |
 
 ## Werte

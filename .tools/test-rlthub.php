@@ -367,7 +367,7 @@ check('WireAddress one: Doku − 1', $hubm->WireAddress(2001) === 2000);
 $form = json_decode($hubm->GetConfigurationForm(), true);
 $deviceOpts = null;
 foreach ($form['elements'] as $e) { if (($e['name'] ?? '') === 'Device') { $deviceOpts = array_column($e['options'], 'value'); } }
-check('Formular: TCP-Modul bietet nur TCP-Treiber an', $deviceOpts === ['robatherm_truecontrol'], json_encode($deviceOpts));
+check('Formular: TCP-Modul bietet nur TCP-Treiber an', $deviceOpts === ['robatherm_truecontrol', 'pichler_lg'], json_encode($deviceOpts));
 check('Formular: onChange nutzt das Modulpräfix', strpos($hubm->GetConfigurationForm(), 'RLT_OnChangeDevice') !== false);
 
 echo "6) RLTHubGateway: Parent-Erkennung, Zyklus über das Gateway\n";
@@ -401,7 +401,7 @@ check('WireAddress auto (Proxon): unverändert', $gwm->WireAddress(195) === 195)
 $gform = json_decode($gwm->GetConfigurationForm(), true);
 $gdev = null;
 foreach ($gform['elements'] as $e) { if (($e['name'] ?? '') === 'Device') { $gdev = array_column($e['options'], 'value'); } }
-check('Formular: Gateway-Modul bietet nur RTU-Treiber an', $gdev === ['proxon_fwt'], json_encode($gdev));
+check('Formular: Gateway-Modul bietet nur RTU-Treiber an', $gdev === ['pichler_lg', 'proxon_fwt'], json_encode($gdev));
 check('module.json: Parent- und Kind-GUID wie im Vorbild (WPModbusHubGateway)', (function () {
     $j = json_decode(file_get_contents(dirname(__DIR__) . '/RLTHubGateway/module.json'), true);
     return $j['parentRequirements'] === ['{E310B701-4AE7-458E-B618-EC13A1A6F6A8}'] && $j['implemented'] === ['{77B31ABB-18FA-4B91-BB63-E5B2AB5588F4}'] && $j['prefix'] === 'RLTGW';
@@ -789,6 +789,82 @@ $dn->formUpdates = [];
 $dn->OnChangeRange('10.0.0.1', '10.0.0.9');
 $dc2 = null; foreach ($dn->formUpdates as $f) { if ($f[0] === 'ScanRangeLine' && $f[1] === 'color') { $dc2 = $f[2]; } }
 check("Suchbereich: Farbe folgt der Eingabe (leer → grün, eigener Bereich → -1)", $dc === $GREEN && $dc2 === -1, json_encode([$dc, $dc2]));
+
+echo "12) Pichler LG (ES2020): Treiber, Vertrag, Verbindungswege, Suche\n";
+$pd = new RLT_PichlerLgDriver();
+$pm = new FakeModbus();
+// Rohwerte nach der Herstellerliste: °C = (Rohwert - 1000) / 10
+$pm->input[30] = [1123, 1200, 1215, 1201];   // T1 Außen 12,3 / T2 Fort 20,0 / T3 Ab 21,5 / T4 Zu 20,1
+$pm->input[29] = [0];                        // keine Summenstörung
+$pm->input[46] = [320, 305];                 // Zuluft/Abluft-Volumenstrom m3/h
+$pm->input[41] = [0];                        // keine Filtermeldung
+$pm->input[50] = [1450];                     // Restzeit bis Filterwechsel h
+$pm->input[48] = [3];                        // Betrieb
+$hp2 = new FakeHub(false);
+check("Pichler: Zyklus ok", $pd->readValues($pm, $hp2) === true);
+check("Pichler: Temperaturen (Rohwert − 1000) ÷ 10: 12,3 / 20,1 / 21,5 °C", abs($hp2->vars['outsideTemp'] - 12.3) < 1e-9 && abs($hp2->vars['supplyTemp'] - 20.1) < 1e-9 && abs($hp2->vars['extractTemp'] - 21.5) < 1e-9, json_encode([$hp2->vars['outsideTemp'], $hp2->vars['supplyTemp'], $hp2->vars['extractTemp']]));
+// eta = (20,1 - 12,3) / (21,5 - 12,3) = 84,78 %
+check("Pichler: WRG-Wirkungsgrad berechnet (84,8 %)", abs($hp2->vars['heatRecoveryEfficiency'] - 84.7826) < 0.01, (string)$hp2->vars['heatRecoveryEfficiency']);
+check("Pichler: Volumenstrom, Störung, Filtermeldung, Restzeit, Betrieb", $hp2->vars['fan1Flow'] === 320.0 && $hp2->vars['fan2Flow'] === 305.0 && $hp2->vars['faultSummary'] === false && $hp2->vars['filterAlarm'] === false && $hp2->vars['filterHoursRemaining'] === 1450.0 && $hp2->vars['systemSwitch'] === true);
+check("Pichler: Adressen ohne Umrechnung (Vorgabe: Listennummer = Adresse), alles Function 4", in_array(['input', 30], $pm->calls, true) && in_array(['input', 29], $pm->calls, true) && in_array(['input', 46], $pm->calls, true) && count(array_filter($pm->calls, function ($c) { return $c[0] !== 'input'; })) === 0, json_encode($pm->calls));
+$pn = new FakeModbus();
+$pn->input[30] = [950, 1000, 1200, 1100]; $pn->input[29] = [1]; $pn->input[48] = [1];
+$hn = new FakeHub(false);
+$pd->readValues($pn, $hn);
+check("Pichler: Minusgrade sind definiert: Rohwert 950 = −5,0 °C, Summenstörung 1 = true, Standby = nicht in Betrieb", abs($hn->vars['outsideTemp'] + 5.0) < 1e-9 && $hn->vars['faultSummary'] === true && $hn->vars['systemSwitch'] === false);
+check("Pichler: Grenzen der Liste: Rohwert 700 = −30 °C, 2300 = 130 °C", (function () use ($pd) { $m = new FakeModbus(); $m->input[30] = [700, 0, 2300, 1000]; $m->input[29] = [0]; $h = new FakeHub(false); $pd->readValues($m, $h); return abs($h->vars['outsideTemp'] + 30.0) < 1e-9 && abs($h->vars['extractTemp'] - 130.0) < 1e-9; })());
+$po = new FakeModbus();
+$po->input[30] = [1123, 1200, 1215, 1201]; $po->input[29] = [0];
+$ho = new FakeHub(false);
+check("Pichler: Zusatzregister fehlen (z. B. ältere Firmware) -> Zyklus bleibt gültig, nichts Falsches geschrieben", $pd->readValues($po, $ho) === true && !isset($ho->vars['fan1Flow']) && !isset($ho->vars['filterHoursRemaining']));
+$pf = new FakeModbus(); $pf->input[29] = [0];
+check("Pichler: Temperaturblock fehlt -> Zyklus meldet Fehler", $pd->readValues($pf, new FakeHub(false)) === false);
+$pv = array_column($pd->getBaseVars(), 0);
+check("Pichler: kein filterRuntimeHours (Restzeit ist keine Betriebsstundenzahl), kein co2 (Sensor nicht erkennbar)", !in_array('filterRuntimeHours', $pv, true) && !in_array('co2', $pv, true) && in_array('filterHoursRemaining', $pv, true) && in_array('filterAlarm', $pv, true));
+check("Pichler: Hinweistexte nennen Herkunft, Adress-Basis-Vorbehalt, Filter- und Volumenstrom-Zuordnung", (function () use ($pd) { $n = implode(' ', $pd->getNotes()); return strpos($n, 'noch an keiner Anlage geprüft') !== false && strpos($n, 'Adress-Basis') !== false && strpos($n, 'Restzeit') !== false && strpos($n, 'm³/h') !== false && strpos($n, 'CO2') !== false; })());
+$pp = new FakeModbus(); $pp->input[25] = [0]; $pp->input[30] = [1123, 1200, 1215, 1201];
+check("Pichler-probe: Modellregister + plausible Temperaturen -> Fund mit Typ „LG 350“", strpos((string)$pd->probe($pp), 'LG 350: Außenluft 12,3') === 0 || strpos((string)$pd->probe($pp), 'LG 350: Außenluft 12.3') === 0, (string)$pd->probe($pp));
+$pq = new FakeModbus(); $pq->input[25] = [7]; $pq->input[30] = [1123, 1200, 1215, 1201];
+check("Pichler-probe: unbekanntes Modell -> kein Fund", $pd->probe($pq) === null);
+$pr = new FakeModbus(); $pr->input[25] = [0]; $pr->input[30] = [0, 0, 0, 0];
+check("Pichler-probe: unplausible Temperaturen (Rohwert 0 = −100 °C) -> kein Fund", $pd->probe($pr) === null);
+check("Robatherm-probe erkennt ein Pichler-Gerät nicht (nur Input-Register)", (new RLT_RobathermTrueControlDriver())->probe($pp) === null);
+
+// Vertrag und beide Verbindungswege
+$ph = new TestHub(990); $ph->Create(); $ph->props['Host'] = '192.0.2.77'; $ph->props['Device'] = 'pichler_lg'; $ph->ApplyChanges();
+$ph->mb = $pm;
+$ph->ReadValues();
+$pf2 = $ph->GetFunctions()[0];
+check("Pichler-Vertrag: filterRuntimeHoursID/co2ID leer, Volumenstrom + Störung + Temperaturen belegt, unit leer", $pf2['filterRuntimeHoursID'] === 0 && $pf2['co2ID'] === 0 && $pf2['fan1FlowID'] > 0 && $pf2['fan2FlowID'] > 0 && $pf2['faultSummaryID'] > 0 && $pf2['outsideTempID'] > 0 && $pf2['unit'] === '', json_encode($pf2));
+check("Pichler über RLTHub (TCP): Variablen gefüllt, Status 102, Vertrag reachable", abs($ph->varValue('outsideTemp') - 12.3) < 1e-9 && $ph->varValue('fan1Flow') === 320.0 && $ph->status === 102 && $pf2['reachable'] === true);
+check("Pichler: Profil m³/h für den Volumenstrom angelegt", isset($GLOBALS['RLT_PROFILES']['RLT.Flow']) && $GLOBALS['RLT_PROFILES']['RLT.Flow']['suffix'] === ' m³/h');
+check("Pichler: Adress-Basis automatisch = Listennummer ist Adresse (🔗-Zeile nennt den Gerätetyp)", (function () use ($ph) { $f = json_decode($ph->GetConfigurationForm(), true); foreach (walkForm($f['elements']) as $e) { if (($e['name'] ?? '') === 'AddressBaseLine') { return strpos($e['caption'], '🔗 Adress-Basis: Doku-Adresse = Wire-Adresse (automatisch, Vorgabe des Gerätetyps Pichler LG (ES2020, z. B. LG 350))') === 0; } } return false; })());
+$pg = new TestGw(991); $pg->Create(); $pg->props['Device'] = 'pichler_lg';
+$GLOBALS['RLT_INSTANCES'][991] = ['ConnectionID' => 992];
+$GLOBALS['RLT_INSTANCES'][992] = ['module' => '{A5F663AB-C400-4FE5-B207-4D67CC030564}', 'props' => ['DeviceID' => 20]];
+$pg->ApplyChanges();
+$pg->parentFn = function (string $json) {
+    $r = json_decode($json, true);
+    if ($r['Function'] !== 4) { return false; }
+    $map = [30 => [1123, 1200, 1215, 1201], 29 => [0], 46 => [320, 305], 41 => [0], 50 => [1450], 48 => [3]];
+    if (!isset($map[$r['Address']])) { return false; }
+    $data = '';
+    foreach ($map[$r['Address']] as $v) { $data .= pack('n', $v); }
+    return "\x04" . chr(strlen($data)) . $data;
+};
+$pg->ReadValues();
+check("Pichler über RLTHubGateway (RTU, ModBus-Gateway, Function 4): Werte und Status 102", abs($pg->varValue('supplyTemp') - 20.1) < 1e-9 && $pg->varValue('fan2Flow') === 305.0 && $pg->status === 102);
+unset($GLOBALS['RLT_INSTANCES'][991], $GLOBALS['RLT_INSTANCES'][992]);
+
+// Netzwerksuche erkennt ein Pichler-Gerät (Function 4: Modell 0 = LG 350, plausible Temperaturen)
+$pz = startServer('map', ['4:25' => 0, '4:30' => 1123, '4:31' => 1200, '4:32' => 1215, '4:33' => 1201]);
+$dp = new RLTHubDiscovery(993); $dp->Create();
+$dp->Discover('127.0.0.1', '127.0.0.1', $pz[1], 1);
+$prow = json_decode($dp->ReadAttributeString('ResultsJSON'), true);
+check("Suche findet das Pichler-Gerät (nur als Pichler, nicht zusätzlich als Robatherm) mit Typ im Fund", count($prow) === 1 && $prow[0]['device'] === 'pichler_lg' && strpos($prow[0]['detail'], 'LG 350') === 0, json_encode($prow));
+$pcfg = null; foreach ($dp->formUpdates as $u) { if ($u[0] === 'Configurator') { $pcfg = json_decode($u[2], true); } }
+check("Suche legt für den Fund eine RLTHub-Instanz mit Gerätetyp pichler_lg an", $pcfg !== null && $pcfg[0]['create']['configuration']['Device'] === 'pichler_lg', json_encode($pcfg));
+stopServer($pz);
 
 echo "8) Treiberliste und Modulkennungen\n";
 $guids = [];

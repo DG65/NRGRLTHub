@@ -25,7 +25,7 @@ class RLTHubDiscovery extends IPSModule
     public const MODULE_NAME = 'RLTHubDiscovery';
     public const MODULE_GUID = '{CC2C38CA-7675-4F27-B993-7B68187B8879}';
 
-    public const NEWS_VERSION = '0.3.0';
+    public const NEWS_VERSION = '0.4.0';
     public const FORUM_THREAD_URL = 'https://community.symcon.de/t/modul-nrg-stack-rlthub-lueftungsanlagen-rlt-kwl-per-modbus-anbinden-robatherm-truecontrol-proxon-fwt/144442';
     public const LICENSE_URL = 'https://github.com/DG65/NRGRLTHub/blob/beta/LICENSE';
     public const PURPOSE = [
@@ -34,8 +34,8 @@ class RLTHubDiscovery extends IPSModule
         'Das Modul selbst misst nichts — die eigentliche Datenerfassung übernimmt danach die neu angelegte RLTHub-Instanz. Geräte mit RS485/Modbus RTU sind im Netzwerk nicht auffindbar, dafür gibt es RLTHubGateway.',
     ];
     public const NEWS = [
-        '• 🆕 Erste Version: Netzwerksuche nach Lüftungsanlagen mit Modbus TCP (Robatherm TrueControl). Die Suche liest nur und schreibt nichts auf die Geräte.',
-        '• ⚠️ Noch an keiner echten Anlage verifiziert. Steuerungen wie TrueControl haben kein festes Erkennungsmerkmal — ein Fund ist ein Vorschlag, den man prüfen sollte.',
+        '• 🆕 Die Suche erkennt jetzt auch Pichler-LG-Anlagen (ES2020-Steuerung) mit Modbus TCP und nennt den Typ (LG 350, 450 oder 740). Wie bisher: Ein Fund ist ein Vorschlag, den man prüfen sollte.',
+        '• ⚠️ Noch an keiner Pichler-Anlage geprüft.',
     ];
 
     private const HUB_GUID            = '{19C33A5B-8C10-45F5-9A33-9928D9005B69}';

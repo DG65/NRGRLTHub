@@ -16,7 +16,7 @@ class RLTHub extends IPSModule
     public const DEFAULT_DEVICE = 'robatherm_truecontrol';
     public const TRANSPORT = 'tcp';
 
-    public const NEWS_VERSION = '0.3.0';
+    public const NEWS_VERSION = '0.4.0';
     public const FORUM_THREAD_URL = 'https://community.symcon.de/t/modul-nrg-stack-rlthub-lueftungsanlagen-rlt-kwl-per-modbus-anbinden-robatherm-truecontrol-proxon-fwt/144442';
     public const LICENSE_URL = 'https://github.com/DG65/NRGRLTHub/blob/beta/LICENSE';
     public const PURPOSE = [
@@ -25,8 +25,8 @@ class RLTHub extends IPSModule
         'Das Modul liest nur — es steuert die Anlage nicht.',
     ];
     public const NEWS = [
-        '• 🆕 Erste Version: Lüftungsanlagen per Modbus TCP auslesen — Außen-/Zu-/Ablufttemperatur, Wirkungsgrad der Wärmerückgewinnung (berechnet), Filterlaufzeit und Sammelstörung. Gerätetyp: Robatherm TrueControl.',
-        '• ⚠️ Noch an keiner echten Anlage verifiziert: Registeradressen, Temperatur-Skalierung und Adress-Basis sind im Panel „Dokumentation & Hilfe" mit ihrem Stand beschrieben. Rückmeldungen sind ausdrücklich willkommen.',
+        '• 🆕 Neuer Gerätetyp: Pichler LG mit ES2020-Steuerung (z. B. LG 350) per Modbus TCP (ab Firmware 1.6, am Gerät einzuschalten). Temperaturen, berechneter WRG-Wirkungsgrad, Zu-/Abluft-Volumenstrom in m³/h, Summenstörmeldung, Filtermeldung und Restzeit bis zum Filterwechsel.',
+        '• ⚠️ Noch an keiner Pichler-Anlage geprüft (Adress-Basis, Zuordnung der Felder). Details im Panel „Dokumentation & Hilfe“. Testberichte sind willkommen.',
     ];
 
     public function Create()
