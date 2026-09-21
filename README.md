@@ -1,7 +1,7 @@
 # NRG-Stack RLTHub
 
 ![Symcon](https://img.shields.io/badge/Symcon-PHPModul-blue)
-![Modul Version](https://img.shields.io/badge/Modul_Version-0.3.0-blue)
+![Modul Version](https://img.shields.io/badge/Modul_Version-0.3.1-blue)
 ![Symcon Version](https://img.shields.io/badge/Symcon_Version-9.0%2B-blue)
 ![License](https://img.shields.io/badge/License-PolyForm_Noncommercial_1.0.0-lightgrey)
 [![Check Style](https://github.com/DG65/NRGRLTHub/actions/workflows/check-style.yml/badge.svg)](https://github.com/DG65/NRGRLTHub/actions/workflows/check-style.yml)
@@ -15,9 +15,10 @@ und [NRGChargerHub](https://github.com/DG65/NRGChargerHub).
 
 ## Status
 
-**0.3.0 (Beta) — noch an keiner echten Anlage verifiziert.** Alle Prüfungen laufen gegen Test-Modbus-Server
-und einen IPSModule-Nachbau; die Registerkarten und Skalierungen sind im Formular und im Quellcode
-mit ihrem Verifikationsstand markiert.
+**0.3.1 (Beta).** Proxon FWT 2.0 ist an einer echten Anlage geprüft (Temperaturen über 0 °C, Störung 0,
+Filterstunden, Betriebsart), Robatherm TrueControl noch an keiner. Die Prüfungen laufen zusätzlich gegen
+Test-Modbus-Server und einen IPSModule-Nachbau; der Verifikationsstand steht je Gerätetyp im Formular
+und im Quellcode.
 
 ## Module
 
@@ -32,7 +33,7 @@ mit ihrem Verifikationsstand markiert.
 | Gerätetyp | Transport | Stand |
 |---|---|---|
 | Robatherm TrueControl | TCP | Registerliste einer einzelnen Anlage (TrueControl wird je Projekt parametriert), Skalierung und Adress-Basis unverifiziert |
-| Proxon FWT 2.0 (Zimmermann) | RTU | Registerliste der Herstellerdoku, Temperaturskalierung unter 0 °C offen |
+| Proxon FWT 2.0 (Zimmermann) | RTU | An einer echten FWT geprüft (21.09.2026); offen: Temperaturen unter 0 °C, Störungscodes |
 
 ## Werte
 

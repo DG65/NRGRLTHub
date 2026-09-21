@@ -537,15 +537,17 @@ class RLT_ProbeAddress
 // 198, Störung 47. Holding-Register (Function 3): Betriebsart 16 (0 = Aus),
 // Stunden Gerätefilter 469.
 //
-// ⚠️ Nicht an einer FWT verifiziert. Bestätigt ist nur die Konvention der
-// Schwestereinheit T300 (WPModbusHub): Excel-Nummer = Wire-Adresse (kein −1).
-// ⚠️ Temperaturskalierung offen: Liste nennt „uint16, *100" ohne Offset,
-// Winterwerte unter 0 °C sind damit nicht darstellbar (die T300 nutzt
-// °C = Roh/10 − 100). Vorläufig Roh/100, Werte ≥ 32768 werden als negativ
-// (Zweierkomplement) gelesen. Bis ein Roh/Display-Paar unter 0 °C vorliegt,
-// gelten Temperaturen unter 0 °C als unbestätigt.
-// ⚠️ „Störung" (Register 47) ist ein Zahlenwert; jeder Wert ≠ 0 gilt als
-// Störung — die Bedeutung der Codes ist nicht dokumentiert.
+// Verifikation (21.09.2026, an einer echten FWT über das ModBus-Gateway, je Rohwert
+// gegen das Display): Adressen und Function Codes stimmen, Adress-Basis =
+// Excel-Nummer = Wire-Adresse, Temperaturen = Roh/100 (T3 1420 = 14,2 °C,
+// T1 1825 = 18,25 °C, T7 2420 = 24,2 °C), Störung 0 = keine Störung,
+// Filterstunden 469 = 1069 h, Betriebsart 16 = 1 (EcoSommer).
+// ⚠️ Weiter offen: Temperaturen unter 0 °C. Die Liste nennt „uint16, *100" ohne
+// Offset, Winterwerte sind damit nicht darstellbar (die T300 nutzt
+// °C = Roh/10 − 100). Bis ein Roh-/Display-Paar bei Minusgraden vorliegt,
+// bleibt „Wert ≥ 32768 = negativ (Zweierkomplement)" eine Annahme.
+// ⚠️ „Störung" (Register 47) ist ein Zahlenwert: 0 = keine Störung ist bestätigt;
+// jeder Wert ≠ 0 gilt als Störung, die Bedeutung der Codes ist nicht dokumentiert.
 // ===========================================================================
 class RLT_ProxonFwtDriver implements RLT_VentilationDriverInterface
 {
@@ -578,9 +580,9 @@ class RLT_ProxonFwtDriver implements RLT_VentilationDriverInterface
     {
         return [
             'Proxon FWT 2.0 (Zimmermann): nur Modbus RTU über RS485 (Werks-Slave-ID 41, 19200 Baud, 8E1) — über Symcons ModBus-Gateway. Die Registerliste ist eine nicht öffentliche Kundendoku; hier sind nur die benutzten Adressen hinterlegt.',
-            'Noch an keiner FWT verifiziert. Adress-Basis: Excel-Nummer = Wire-Adresse (an der Schwestereinheit T300 bestätigt, für die FWT zu erwarten).',
-            'Temperaturen: Register-Rohwert ÷ 100 (laut Liste „uint16, *100" ohne Offset). Werte unter 0 °C sind damit nicht sicher darstellbar — die Schwestereinheit T300 nutzt eine Vorspannung. Bis ein Roh-/Display-Paar unter 0 °C vorliegt, sind Minusgrade unbestätigt.',
-            'Störung: jeder Wert ≠ 0 im Register „Stoerung" gilt als Sammelstörung, die Bedeutung der Codes ist nicht dokumentiert. Ventilator-Volumenstrom und Luftqualität liefert die FWT nicht (Vertragsfelder bleiben leer).',
+            'Am 21.09.2026 an einer echten FWT geprüft (Rohwert gegen Display): Adressen, Function Codes, Temperaturen (Rohwert ÷ 100), Störung 0 = keine Störung, Filterstunden und Betriebsart stimmen. Die Excel-Nummer ist direkt die Adresse am Gateway.',
+            'Noch offen: Temperaturen unter 0 °C. Die Liste nennt keinen Offset (die Schwestereinheit T300 nutzt eine Vorspannung). Bis ein Roh-/Display-Paar bei Minusgraden vorliegt, werden Werte ab 32768 als negativ gelesen — das ist eine Annahme.',
+            'Störung: 0 = keine Störung ist bestätigt. Jeder andere Wert im Register „Stoerung" gilt als Sammelstörung, die Bedeutung der Codes ist nicht dokumentiert. Ventilator-Volumenstrom und Luftqualität liefert die FWT nicht (Vertragsfelder bleiben leer).',
         ];
     }
 
@@ -664,7 +666,7 @@ class RLT_Drivers
             'class'      => 'RLT_ProxonFwtDriver',
             'caption'    => 'Proxon FWT 2.0 (Zimmermann)',
             'transports' => ['rtu'],
-            'confidence' => 'Registerliste der Herstellerdoku, noch an keiner FWT verifiziert (Temperaturskalierung unter 0 °C offen).',
+            'confidence' => 'An einer echten FWT geprüft (21.09.2026): Adressen, Temperaturen über 0 °C, Störung 0, Filterstunden, Betriebsart. Offen: Temperaturen unter 0 °C und die Störungscodes.',
         ],
     ];
 
@@ -820,7 +822,7 @@ trait RLT_HubTrait
             'caption'  => '📖 Dokumentation & Hilfe',
             'expanded' => false,
             'items'    => array_merge([
-                ['type' => 'Label', 'caption' => static::MODULE_NAME . ' Version ' . $version . ' — noch an keiner echten Anlage verifiziert.'],
+                ['type' => 'Label', 'caption' => static::MODULE_NAME . ' Version ' . $version . ' — Stand der Prüfung je Gerätetyp: siehe unten.'],
                 ['type' => 'Label', 'caption' => 'Liefert den NRG-Stack-Vertrag Type=>\'ventilation\' (contractVersion 1.0, mit dem EMS abgestimmt). Rein lesend — das Modul steuert die Anlage nicht.'],
                 ['type' => 'Label', 'caption' => $transportNote],
                 ['type' => 'Label', 'caption' => 'Schlägt eine Abfrage fehl, steht der Instanzstatus auf „Verbindungsfehler" und einmalig eine Meldung im Symcon-Protokoll. „Verbindung jetzt testen" zeigt den Grund.'],

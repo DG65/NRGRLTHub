@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.1 (21.09.2026)
+
+- Proxon FWT 2.0 an einer echten Anlage geprüft (Rohwert gegen Display, über das ModBus-Gateway):
+  Adressen und Function Codes, Adress-Basis (Excel-Nummer = Adresse am Gateway), Temperaturen
+  (Rohwert ÷ 100), Störung 0 = keine Störung, Filterstunden und Betriebsart stimmen. Hinweistexte,
+  Vertrauensangabe des Gerätetyps und Treiberkommentar entsprechend angepasst.
+- Weiter offen: Temperaturen unter 0 °C und die Bedeutung der Störungscodes (Werte ≠ 0).
+- Der Prüfstand enthält die echten Messwerte als Regressionsfall.
+
 ## 0.3.0 (19.09.2026)
 
 - Verbundweite Formular-Konvention (SUITE.md „Einheitliche Formular-Optik") in allen drei Modulen:

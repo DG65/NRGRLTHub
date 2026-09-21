@@ -311,6 +311,24 @@ $px->readValues($mw, $hw);
 check('Wert ≥ 32768 wird als negativ gelesen (-2,00 °C), Betriebsart Aus -> false', abs($hw->vars['outsideTemp'] + 2.0) < 1e-9 && $hw->vars['systemSwitch'] === false);
 check('Proxon liefert kein co2/fan (nicht in getBaseVars)', !in_array('co2', array_column($px->getBaseVars(), 0), true) && !in_array('fan1Flow', array_column($px->getBaseVars(), 0), true));
 
+echo "4b) Proxon FWT: echte Messwerte einer FWT (21.09.2026, Rohwert gegen Display) als Regressionsfall\n";
+$real = new FakeModbus();
+$real->input[198] = [1420];  // T3 Frischluft, Display 14,2 °C
+$real->input[195] = [1825];  // T1 Zuluft, Display 18,2 °C (Excel-Wert 18,25)
+$real->input[196] = [2420];  // T7 Abluft, Display 24,2 °C
+$real->input[47]  = [0];     // keine Störung
+$real->holding[469] = [1069];// Filterstunden Gerät, Display 1069
+$real->holding[16]  = [1];   // Betriebsart 1 = EcoSommer
+$hr = new FakeHub(false);
+check("echte FWT-Messwerte: Zyklus ok", (new RLT_ProxonFwtDriver())->readValues($real, $hr) === true);
+check("echte FWT-Messwerte: 14,2 / 18,25 / 24,2 °C", abs($hr->vars['outsideTemp'] - 14.2) < 1e-9 && abs($hr->vars['supplyTemp'] - 18.25) < 1e-9 && abs($hr->vars['extractTemp'] - 24.2) < 1e-9, json_encode([$hr->vars['outsideTemp'], $hr->vars['supplyTemp'], $hr->vars['extractTemp']]));
+check("echte FWT-Messwerte: Wirkungsgrad (18,25-14,2)/(24,2-14,2) = 40,5 %", abs($hr->vars['heatRecoveryEfficiency'] - 40.5) < 1e-6, (string)$hr->vars['heatRecoveryEfficiency']);
+check("echte FWT-Messwerte: Filterstunden 1069, keine Störung, Betriebsart an", $hr->vars['filterRuntimeHours'] === 1069.0 && $hr->vars['faultSummary'] === false && $hr->vars['systemSwitch'] === true);
+$conf = RLT_Drivers::DRIVERS['proxon_fwt']['confidence'];
+$notes = implode(' ', (new RLT_ProxonFwtDriver())->getNotes());
+check("Vertrauensangabe FWT nennt die echte Prüfung UND die offenen Punkte (Minusgrade, Störungscodes)", strpos($conf, '21.09.2026') !== false && strpos($conf, 'unter 0 °C') !== false && strpos($conf, 'Störungscodes') !== false && strpos($notes, 'Annahme') !== false);
+check("Robatherm bleibt ehrlich als ungeprüft gekennzeichnet", strpos(RLT_Drivers::DRIVERS['robatherm_truecontrol']['confidence'], 'noch nicht an Hardware verifiziert') !== false);
+
 echo "5) RLTHub (TCP) gegen den IPSModule-Nachbau: Variablen, Zyklus, Vertrag, Formular\n";
 class TestHub extends RLTHub
 {
@@ -442,7 +460,7 @@ foreach ($forms as $name => $form) {
     check("$name: Panel-Reihenfolge Wozu → Neu → Doku & Hilfe (eingeklappt) …", ($el[0]['name'] ?? '') === 'PurposeIntroPanel' && ($el[1]['name'] ?? '') === 'NewsPanel' && strpos($el[2]['caption'] ?? '', '📖 Dokumentation & Hilfe') === 0 && $el[2]['expanded'] === false);
     check("$name: … Forum-Hinweis, dann „Über dieses Modul“ ganz unten", ($el[$n - 2]['name'] ?? '') === 'ForumHintPanel' && strpos($el[$n - 1]['caption'] ?? '', '🧡  Über dieses Modul') === 0);
     check("$name: Wozu- und Neu-Panel aufgeklappt, Über-Panel eingeklappt und NICHT wegklickbar (kein name)", $el[0]['expanded'] === true && $el[1]['expanded'] === true && $el[$n - 1]['expanded'] === false && !isset($el[$n - 1]['name']));
-    check("$name: Neu-Panel trägt die Version in der Caption", strpos($el[1]['caption'], $lib['version']) !== false, $el[1]['caption']);
+    check("$name: Neu-Panel trägt die eigene Neuigkeits-Version in der Caption", strpos($el[1]['caption'], constant($name . '::NEWS_VERSION')) !== false, $el[1]['caption']);
     $dokuText = json_encode($el[2], JSON_UNESCAPED_UNICODE);
     check("$name: Doku-Panel nennt die Versionsnummer", strpos($dokuText, 'Version ' . $lib['version']) !== false);
     $paypal = 0; $license = 0;
@@ -483,7 +501,9 @@ foreach ($forms as $name => $form) {
     }
     check("$name: drei Ausblenden-Schaltflächen (Wozu, Neu, Forum) rufen PREFIX_Ack…(\$id)", $ackTargets === 3, (string)$ackTargets);
 }
-check("Neu-Version = library.json-Version in allen drei Modulen", RLTHub::NEWS_VERSION === $lib['version'] && RLTHubGateway::NEWS_VERSION === $lib['version'] && RLTHubDiscovery::NEWS_VERSION === $lib['version'], $lib['version']);
+// Ein News-Panel gibt es nur bei echten Neuigkeiten (keine erfundene Neuigkeit): die Version eines Moduls
+// steht nie über der library.json-Version, und das Modul mit der jüngsten Neuigkeit trägt genau sie.
+check("Neu-Versionen: nie über der library.json-Version, RLTHubGateway (Neuigkeit dieser Version) trägt sie", version_compare(RLTHub::NEWS_VERSION, $lib['version'], '<=') && version_compare(RLTHubDiscovery::NEWS_VERSION, $lib['version'], '<=') && RLTHubGateway::NEWS_VERSION === $lib['version'], $lib['version']);
 check("library.json: nur id/author/name/url/compatibility/version/build/date, compatibility als {version}", array_keys($lib) === ['id', 'author', 'name', 'url', 'compatibility', 'version', 'build', 'date'] && array_keys($lib['compatibility']) === ['version']);
 foreach (['RLTHub', 'RLTHubGateway', 'RLTHubDiscovery'] as $mod) {
     $j = json_decode(file_get_contents("$root/$mod/module.json"), true);
