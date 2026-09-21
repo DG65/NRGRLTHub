@@ -475,7 +475,7 @@ foreach ($forms as $name => $form) {
     check("$name: Link-Schaltflächen nutzen onClick=echo + link=true; PayPal und Lizenz je einmal, Lizenz auf Repo NRGRLTHub/beta", $paypal === 1 && $license === 1, "paypal=$paypal license=$license");
     $all = json_encode(walkForm($el), JSON_UNESCAPED_UNICODE);
     // Der Suchbereich-Hinweis nennt zur Laufzeit das EIGENE Netz des Nutzers (abgeleitet, nicht fest im Code).
-    $allNoRuntime = preg_replace('/Leer = [\d.]+ bis [\d.]+ \(aus dem eigenen Netz abgeleitet\)\./u', '', $all);
+    $allNoRuntime = preg_replace('/🔗 Suchbereich: [\d.]+ bis [\d.]+ \(automatisch aus dem eigenen Netz\)\./u', '', $all);
     check("$name: Über-Panel im Wortlaut „Variante A“", strpos($all, 'Entstanden aus echter Begeisterung für die eigene Anlage — und ein paar durchgetippten Abenden.') !== false && strpos($all, 'dietmar@gureth.eu') !== false && strpos($all, 'Über eine kleine Spende freue ich mich') !== false);
     $badOnClick = false;
     foreach (walkForm($el) as $e) {
@@ -700,6 +700,71 @@ check("Suche: Gateway und verbundene RLTHubGateway -> ✅ mit Zahlen", strpos((s
 $GLOBALS['RLT_INSTANCES'][975]['ConnectionID'] = 0;
 check("Suche: RLTHubGateway ohne Gateway -> ⚠️ mit Auswahlhinweis", strpos((string)$sumEl($dsum), '⚠️ 1 RLTHubGateway-Instanz(en) ohne ModBus-Gateway') === 0, (string)$sumEl($dsum));
 unset($GLOBALS['RLT_INSTANCES'][974], $GLOBALS['RLT_INSTANCES'][975]);
+
+echo "11) Wert kommt automatisch: Eingabefeld ersetzen (SUITE.md 21.09.2026)\n";
+$find = function (array $els, callable $pred) { foreach (walkForm($els) as $e) { if ($pred($e)) { return $e; } } return null; };
+$topLevelIn = function (array $panel, string $name) { foreach ($panel['items'] as $i) { if (($i['name'] ?? '') === $name) { return true; } } return false; };
+$verbindung = function ($m) { foreach (json_decode($m->GetConfigurationForm(), true)['elements'] as $e) { if (strpos($e['caption'] ?? '', '🔌 Verbindung') === 0) { return $e; } } return null; };
+$overridePanel = function (array $panel) { foreach ($panel['items'] as $i) { if (($i['type'] ?? '') === 'ExpansionPanel' && strpos($i['caption'], 'Eigene Adress-Basis stattdessen verwenden') === 0) { return $i; } } return null; };
+
+// Adress-Basis: Robatherm (Vorgabe: 1-basiert) und Proxon (Vorgabe: Excel-Nr. = Wire)
+$ab = new RLTHub(980); $ab->Create(); $ab->props['Host'] = '192.0.2.5';
+$vp = $verbindung($ab);
+$lineRob = $find($vp['items'], function ($e) { return ($e['name'] ?? '') === 'AddressBaseLine'; });
+check("Adress-Basis 'automatisch' (Robatherm): 🔗-Zeile mit geltendem Wert und Quelle (Vorgabe des Gerätetyps)", strpos($lineRob['caption'], '🔗 Adress-Basis: Doku-Adresse − 1 = Wire-Adresse (automatisch, Vorgabe des Gerätetyps Robatherm TrueControl)') === 0, $lineRob['caption']);
+$op = $overridePanel($vp);
+check("Adress-Basis 'automatisch': Auswahlfeld NICHT direkt im Panel, sondern im eingeklappten Überschreib-Panel", $op !== null && $op['expanded'] === false && $topLevelIn($op, 'AddressBase') && !$topLevelIn($vp, 'AddressBase'));
+$gwb = new TestGw(981); $gwb->Create();
+$lineProx = $find($verbindung($gwb)['items'], function ($e) { return ($e['name'] ?? '') === 'AddressBaseLine'; });
+check("Adress-Basis 'automatisch' (Proxon): 🔗-Zeile mit dem Wert dieses Gerätetyps (Excel-Nr. = Wire-Adresse)", strpos($lineProx['caption'], '🔗 Adress-Basis: Doku-Adresse = Wire-Adresse (automatisch, Vorgabe des Gerätetyps Proxon FWT 2.0 (Zimmermann))') === 0, $lineProx['caption']);
+$ab->props['AddressBase'] = 'zero';
+$vp2 = $verbindung($ab);
+$line2 = $find($vp2['items'], function ($e) { return ($e['name'] ?? '') === 'AddressBaseLine'; });
+check("Eigene Adress-Basis: ✏️-Zeile nennt die eigene Angabe und die Vorgabe, das Auswahlfeld bleibt sichtbar (kein Überschreib-Panel)", strpos($line2['caption'], '✏️ Adress-Basis: Doku-Adresse = Wire-Adresse (eigene Angabe; die Vorgabe des Gerätetyps wäre: Doku-Adresse − 1 = Wire-Adresse)') === 0 && $topLevelIn($vp2, 'AddressBase') && $overridePanel($vp2) === null, $line2['caption']);
+$ab->formUpdates = [];
+$ab->OnChangeDevice('proxon_fwt', 'auto');
+$u = null; foreach ($ab->formUpdates as $f) { if ($f[0] === 'AddressBaseLine') { $u = $f; } }
+check("Gerätetyp im offenen Formular gewechselt: die Adress-Basis-Zeile folgt der Auswahl (onChange + UpdateFormField)", $u !== null && strpos($u[2], 'Vorgabe des Gerätetyps Proxon FWT 2.0') !== false, json_encode($u));
+$ab->formUpdates = [];
+$ab->OnChangeAddressBase('robatherm_truecontrol', 'one');
+$u = null; foreach ($ab->formUpdates as $f) { if ($f[0] === 'AddressBaseLine') { $u = $f; } }
+check("Adress-Basis im offenen Formular geändert: die Zeile folgt (✏️ statt 🔗)", $u !== null && strpos($u[2], '✏️ Adress-Basis: Doku-Adresse − 1 = Wire-Adresse') === 0, json_encode($u));
+$noValueWrites = true; $files = ['libs/RLTCore.php', 'libs/RLTPanels.php', 'RLTHub/module.php', 'RLTHubGateway/module.php', 'RLTHubDiscovery/module.php'];
+foreach ($files as $f) { if (preg_match("/UpdateFormField\([^)]*,\s*'value'\s*,/", file_get_contents(dirname(__DIR__) . '/' . $f))) { $noValueWrites = false; } }
+check("Nie den automatischen Wert per UpdateFormField('…', 'value', …) ins Eingabefeld schreiben (Quelltext-Prüfung)", $noValueWrites);
+
+// Gateway: Slave-ID kommt vom ModBus-Gateway, kein Eingabefeld
+$sg = new TestGw(982); $sg->Create(); $sg->ApplyChanges();
+$slaveNone = $find($verbindung($sg)['items'], function ($e) { return ($e['name'] ?? '') === 'SlaveIdLine'; });
+check("Gateway ohne ModBus-Gateway: ℹ️ „Slave-ID wird am ModBus-Gateway eingestellt — noch kein Gateway verbunden“", strpos($slaveNone['caption'], 'ℹ️ Slave-ID: wird am ModBus-Gateway eingestellt (Geräte-ID) — noch kein Gateway verbunden') === 0, $slaveNone['caption']);
+$GLOBALS['RLT_INSTANCES'][982] = ['ConnectionID' => 983];
+$GLOBALS['RLT_INSTANCES'][983] = ['module' => '{A5F663AB-C400-4FE5-B207-4D67CC030564}', 'props' => ['DeviceID' => 41]];
+$slaveOk = $find($verbindung($sg)['items'], function ($e) { return ($e['name'] ?? '') === 'SlaveIdLine'; });
+check("Gateway mit ModBus-Gateway: 🔗 „Slave-ID (Geräte-ID): 41 (automatisch vom ModBus-Gateway …)“, kein Eingabefeld dafür", strpos($slaveOk['caption'], '🔗 Slave-ID (Geräte-ID): 41 (automatisch vom ModBus-Gateway „Instanz 983", dort einstellbar)') === 0 && $find(json_decode($sg->GetConfigurationForm(), true)['elements'], function ($e) { return in_array($e['name'] ?? '', ['UnitId', 'SlaveId'], true); }) === null, $slaveOk['caption']);
+unset($GLOBALS['RLT_INSTANCES'][982], $GLOBALS['RLT_INSTANCES'][983]);
+
+// Suche: Suchbereich
+class DiscWithNet extends RLTHubDiscovery { protected function guessLocalSubnetPrefix(): string { return '192.0.2'; } }
+class DiscNoNet extends RLTHubDiscovery { protected function guessLocalSubnetPrefix(): string { return ''; } }
+$rangePanel = function ($m) { foreach (json_decode($m->GetConfigurationForm(), true)['elements'] as $e) { if (($e['caption'] ?? '') === '🔎 Suchbereich') { return $e; } } return null; };
+$dn = new DiscWithNet(984); $dn->Create();
+$rp = $rangePanel($dn);
+$rline = $find($rp['items'], function ($e) { return ($e['name'] ?? '') === 'ScanRangeLine'; });
+$rop = null; foreach ($rp['items'] as $i) { if (($i['type'] ?? '') === 'ExpansionPanel' && strpos($i['caption'], 'Eigenen Suchbereich stattdessen verwenden') === 0) { $rop = $i; } }
+check("Suche, Netz erkennbar und nichts eingetragen: 🔗-Zeile mit Bereich und Quelle, Felder nur im eingeklappten Überschreib-Panel", $rline !== null && $rline['caption'] === '🔗 Suchbereich: 192.0.2.1 bis 192.0.2.254 (automatisch aus dem eigenen Netz).' && $rop !== null && $rop['expanded'] === false && $topLevelIn($rop, 'ScanStartIP') && $topLevelIn($rop, 'ScanEndIP') && !$topLevelIn($rp, 'ScanStartIP'), $rline['caption'] ?? 'null');
+$dn->props['ScanStartIP'] = '10.9.8.1'; $dn->props['ScanEndIP'] = '10.9.8.20';
+$rp2 = $rangePanel($dn);
+$rline2 = $find($rp2['items'], function ($e) { return ($e['name'] ?? '') === 'ScanRangeLine'; });
+check("Suche, eigener Bereich: ✏️-Zeile, Felder direkt sichtbar (kein Überschreib-Panel)", $rline2['caption'] === '✏️ Eigener Suchbereich: 10.9.8.1 bis 10.9.8.20.' && $topLevelIn($rp2, 'ScanStartIP') && $topLevelIn($rp2, 'ScanEndIP'), $rline2['caption']);
+$dz = new DiscNoNet(985); $dz->Create();
+$rp3 = $rangePanel($dz);
+$rline3 = $find($rp3['items'], function ($e) { return ($e['name'] ?? '') === 'ScanRangeLine'; });
+check("Suche, kein Netz erkennbar: ℹ️ „Start- und End-IP-Adresse werden gebraucht“, Felder sichtbar", $rline3['caption'] === 'ℹ️ Kein eigenes Netz erkannt — Start- und End-IP-Adresse werden gebraucht.' && $topLevelIn($rp3, 'ScanStartIP'), $rline3['caption']);
+$dn->formUpdates = [];
+$dn->OnChangeRange('', '');
+$ur = null; foreach ($dn->formUpdates as $f) { if ($f[0] === 'ScanRangeLine') { $ur = $f; } }
+check("Suchbereich im offenen Formular geleert: die Zeile folgt (wieder 🔗 automatisch)", $ur !== null && strpos($ur[2], '🔗 Suchbereich: 192.0.2.1 bis 192.0.2.254') === 0, json_encode($ur));
+check("Der Knopf „Netzwerk durchsuchen“ übergibt die Feldwerte weiterhin (Felder stehen im Formular, auch im Überschreib-Panel)", strpos($dn->GetConfigurationForm(), 'RLTD_Discover($id, $ScanStartIP, $ScanEndIP, $ScanPort, $ScanUnitId)') !== false);
 
 echo "8) Treiberliste und Modulkennungen\n";
 $guids = [];

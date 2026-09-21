@@ -9,7 +9,13 @@
   gültigen Antwort und den zuletzt gelesenen Werten samt Quelle. „Verbindung jetzt testen" frischt sie auf.
 - Die Gateway-Übersicht der Suche zeigt ihren Zustand (ℹ️ nichts gefunden, ✅ Zahlen, ⚠️ RLTHubGateway ohne Gateway).
 - Prüfstand: jeder Zustand wird im ausgelieferten Formular gefunden, ein statischer Ersatzsatz lässt ihn
-  rot werden (164 Prüfungen).
+  rot werden.
+- Verbund-Konvention „Wert kommt automatisch: Eingabefeld ersetzen“ (SUITE.md, 21.09.2026): Die Adress-Basis
+  („automatisch“) und der Suchbereich der Suche (leer = eigenes Netz) zeigen den geltenden Wert samt Quelle als
+  schreibgeschützte Zeile (🔗); das Feld steckt dann in einem eingeklappten Panel „… stattdessen verwenden“.
+  Eigene Angaben bleiben sichtbar (✏️), ohne erkennbaren Automatikwert werden die Felder gebraucht (ℹ️).
+  Im Gateway-Modul zeigt eine Zeile die Slave-ID, die vom ModBus-Gateway kommt. Die Zeilen folgen der
+  Auswahl im offenen Formular. Der automatische Wert wird nie ins Eingabefeld geschrieben.
 
 ## 0.3.1 (21.09.2026)
 

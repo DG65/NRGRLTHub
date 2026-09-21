@@ -50,8 +50,20 @@ class RLTHubGateway extends IPSModule
 
     protected function rltConnectionItems(): array
     {
+        // Die Slave-ID kommt vom ModBus-Gateway und ersetzt ein Eingabefeld (SUITE.md
+        // „Wert kommt automatisch“): schreibgeschützte Zeile statt Feld.
+        if ($this->hasGatewayParent()) {
+            $parent = (int)(@IPS_GetInstance($this->InstanceID)['ConnectionID'] ?? 0);
+            $deviceId = @IPS_GetProperty($parent, 'DeviceID');
+            $slave = ($deviceId !== false && $deviceId !== null)
+                ? '🔗 Slave-ID (Geräte-ID): ' . (int)$deviceId . ' (automatisch vom ModBus-Gateway „' . IPS_GetName($parent) . '", dort einstellbar)'
+                : 'ℹ️ Slave-ID: wird am ModBus-Gateway „' . IPS_GetName($parent) . '" eingestellt (Geräte-ID), dort nicht auslesbar.';
+        } else {
+            $slave = 'ℹ️ Slave-ID: wird am ModBus-Gateway eingestellt (Geräte-ID) — noch kein Gateway verbunden.';
+        }
         return [
-            ['type' => 'Label', 'caption' => 'So wird verbunden: Der Anschluss läuft über Symcons ModBus-Gateway. Oben unter „Gateway" das ModBus-Gateway wählen (Symcon-Objektbaum: Serial Port → ModBus Gateway, Gateway-Modus RTU für RS485). Die Slave-ID (Modbus-Adresse des Geräts) wird am Gateway eingestellt („Geräte-ID"), nicht hier.'],
+            ['type' => 'Label', 'caption' => 'So wird verbunden: Der Anschluss läuft über Symcons ModBus-Gateway. Oben unter „Gateway" das ModBus-Gateway wählen (Symcon-Objektbaum: Serial Port → ModBus Gateway, Gateway-Modus RTU für RS485).'],
+            ['type' => 'Label', 'name' => 'SlaveIdLine', 'caption' => $slave],
         ];
     }
 

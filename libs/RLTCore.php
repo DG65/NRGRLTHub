@@ -787,9 +787,76 @@ trait RLT_HubTrait
         $this->UpdateFormField('ConnectionStatusLine', 'caption', $this->rltStatusLine());
     }
 
-    public function OnChangeDevice(string $device): void
+
+    // -----------------------------------------------------------------------
+    // Adress-Basis nach der Verbund-Konvention „Wert kommt automatisch:
+    // Eingabefeld ersetzen“ (SUITE.md, 21.09.2026): Bei „automatisch“ zeigt das
+    // Formular eine schreibgeschützte Zeile mit dem geltenden Wert und seiner
+    // Quelle (🔗); das Auswahlfeld steckt in einem eingeklappten Panel für
+    // bewusstes Überschreiben. Bei eigener Angabe bleibt es sichtbar (✏️).
+    // Der automatische Wert wird NIE per UpdateFormField('value') ins Feld
+    // geschrieben, sonst würde „Übernehmen“ ihn als eigene Angabe speichern.
+    // -----------------------------------------------------------------------
+    private function rltAddressBaseLine(string $device, string $base): string
+    {
+        $driverDefault = RLT_Drivers::create($device)->addressOneBasedDefault();
+        $describe = function (bool $oneBased): string {
+            return $oneBased ? 'Doku-Adresse − 1 = Wire-Adresse' : 'Doku-Adresse = Wire-Adresse';
+        };
+        if ($base === 'one' || $base === 'zero') {
+            return '✏️ Adress-Basis: ' . $describe($base === 'one') . ' (eigene Angabe; die Vorgabe des Gerätetyps wäre: ' . $describe($driverDefault) . ')';
+        }
+        $caption = RLT_Drivers::DRIVERS[$device]['caption'] ?? $device;
+        return '🔗 Adress-Basis: ' . $describe($driverDefault) . ' (automatisch, Vorgabe des Gerätetyps ' . $caption . ')';
+    }
+
+    private function rltAddressBaseItems(string $device, string $base): array
+    {
+        $select = [
+            'type'     => 'Select',
+            'name'     => 'AddressBase',
+            'caption'  => 'Adress-Basis der Registerliste',
+            'options'  => [
+                ['caption' => 'automatisch (Vorgabe des Gerätetyps)', 'value' => 'auto'],
+                ['caption' => 'Doku-Adresse − 1 = Wire-Adresse (1-basierte Liste)', 'value' => 'one'],
+                ['caption' => 'Doku-Adresse = Wire-Adresse', 'value' => 'zero'],
+            ],
+            'onChange' => static::PREFIX . '_OnChangeAddressBase($id, $Device, $AddressBase);',
+        ];
+        $help = [
+            'type'    => 'PopupButton',
+            'caption' => 'Was bedeutet die Adress-Basis der Registerliste?',
+            'width'   => '480px',
+            'popup'   => [
+                'caption' => 'Adress-Basis der Registerliste',
+                'items'   => [
+                    ['type' => 'Label', 'caption' => 'Herstellerlisten zählen Register oft ab 1 (Modicon-Konvention), auf der Leitung zählt Modbus aber ab 0. Ob die Adresse aus der Liste also noch um 1 verringert werden muss, hängt vom Gerät ab.'],
+                    ['type' => 'Label', 'caption' => 'Die Vorgabe des gewählten Gerätetyps gilt automatisch. Liefert die Anlage Nullwerte, Fehler oder erkennbar falsche Werte, kannst du unter „Eigene Adress-Basis stattdessen verwenden" testweise die andere Auswahl einstellen und „Verbindung jetzt testen" klicken.'],
+                    ['type' => 'Label', 'caption' => 'Ob die Vorgabe eines Gerätetyps stimmt, steht im Panel „Dokumentation & Hilfe".'],
+                ],
+            ],
+        ];
+        $line = ['type' => 'Label', 'name' => 'AddressBaseLine', 'caption' => $this->rltAddressBaseLine($device, $base)];
+        if ($base === 'one' || $base === 'zero') {
+            return [$line, $help, $select];
+        }
+        return [
+            $line,
+            $help,
+            ['type' => 'ExpansionPanel', 'caption' => 'Eigene Adress-Basis stattdessen verwenden', 'expanded' => false, 'items' => [$select]],
+        ];
+    }
+
+    public function OnChangeAddressBase(string $device, string $addressBase): void
+    {
+        $this->UpdateFormField('AddressBaseLine', 'caption', $this->rltAddressBaseLine($device, $addressBase));
+    }
+
+    public function OnChangeDevice(string $device, string $addressBase): void
     {
         $this->UpdateFormField('DeviceConfidence', 'caption', 'ℹ️ ' . (RLT_Drivers::DRIVERS[$device]['confidence'] ?? ''));
+        // Die Adress-Basis-Zeile folgt der Auswahl im offenen Formular, nicht dem Speicherstand.
+        $this->UpdateFormField('AddressBaseLine', 'caption', $this->rltAddressBaseLine($device, $addressBase));
     }
 
     public function GetConfigurationForm()
@@ -813,20 +880,6 @@ trait RLT_HubTrait
             ? 'RS485/Modbus RTU läuft über Symcons ModBus-Gateway (Serial Port → ModBus Gateway → diese Instanz). Das gilt auch für den eingebauten RS485-Port einer Symbox — der ist kein externes Gateway und nur so erreichbar. Anlagen mit Modbus TCP bindest du mit dem Modul RLTHub an.'
             : 'Diese Instanz spricht Modbus TCP. Ein externer RTU→TCP-Konverter (z. B. für RS485-Geräte) geht damit ebenfalls. Der eingebaute RS485-Port einer Symbox ist dagegen kein externes Gateway — dafür gibt es das Modul RLTHubGateway.';
 
-        $addressHelp = [
-            'type'    => 'PopupButton',
-            'caption' => 'Was bedeutet die Adress-Basis der Registerliste?',
-            'width'   => '480px',
-            'popup'   => [
-                'caption' => 'Adress-Basis der Registerliste',
-                'items'   => [
-                    ['type' => 'Label', 'caption' => 'Herstellerlisten zählen Register oft ab 1 (Modicon-Konvention), auf der Leitung zählt Modbus aber ab 0. Ob die Adresse aus der Liste also noch um 1 verringert werden muss, hängt vom Gerät ab.'],
-                    ['type' => 'Label', 'caption' => '„automatisch" nimmt die Vorgabe des gewählten Gerätetyps. Liefert die Anlage Nullwerte, Fehler oder erkennbar falsche Werte, stelle testweise die andere Auswahl ein und klicke auf „Verbindung jetzt testen".'],
-                    ['type' => 'Label', 'caption' => 'Ob die Vorgabe eines Gerätetyps stimmt, steht im Panel „Dokumentation & Hilfe".'],
-                ],
-            ],
-        ];
-
         $fach = [
             ['type' => 'CheckBox', 'name' => 'Active', 'caption' => 'Kommunikation aktiv'],
             ['type' => 'ValidationTextBox', 'name' => 'Location', 'caption' => 'Bezeichnung / Standort (optional)'],
@@ -836,7 +889,7 @@ trait RLT_HubTrait
                 'name'     => 'Device',
                 'caption'  => 'Gerätetyp',
                 'options'  => $options,
-                'onChange' => static::PREFIX . '_OnChangeDevice($id, $Device);',
+                'onChange' => static::PREFIX . '_OnChangeDevice($id, $Device, $AddressBase);',
             ],
             [
                 'type'    => 'Label',
@@ -848,17 +901,7 @@ trait RLT_HubTrait
                 'caption'  => '🔌 Verbindung',
                 'expanded' => true,
                 'items'    => array_merge([['type' => 'Label', 'name' => 'ConnectionStatusLine', 'caption' => $this->rltStatusLine()]], $this->rltConnectionItems(), [
-                    [
-                        'type'    => 'Select',
-                        'name'    => 'AddressBase',
-                        'caption' => 'Adress-Basis der Registerliste',
-                        'options' => [
-                            ['caption' => 'automatisch (Vorgabe des Gerätetyps)', 'value' => 'auto'],
-                            ['caption' => 'Doku-Adresse − 1 = Wire-Adresse (1-basierte Liste)', 'value' => 'one'],
-                            ['caption' => 'Doku-Adresse = Wire-Adresse', 'value' => 'zero'],
-                        ],
-                    ],
-                    $addressHelp,
+                    ...$this->rltAddressBaseItems($device, (string)$this->ReadPropertyString('AddressBase')),
                     ['type' => 'NumberSpinner', 'name' => 'PollInterval', 'caption' => 'Abfragetakt', 'minimum' => 5, 'maximum' => 3600, 'suffix' => ' s'],
                     ['type' => 'Button', 'caption' => '🔎  Verbindung jetzt testen', 'onClick' => 'echo ' . static::PREFIX . '_TestConnection($id);'],
                 ]),

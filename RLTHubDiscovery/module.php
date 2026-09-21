@@ -78,9 +78,6 @@ class RLTHubDiscovery extends IPSModule
     public function GetConfigurationForm()
     {
         $prefix = $this->guessLocalSubnetPrefix();
-        $hint  = $prefix !== ''
-            ? 'Leer = ' . $prefix . '.1 bis ' . $prefix . '.254 (aus dem eigenen Netz abgeleitet).'
-            : 'Start- und End-IP-Adresse eintragen.';
 
         $rows = json_decode((string)$this->ReadAttributeString('ResultsJSON'), true);
         $values = $this->buildValues(is_array($rows) ? $rows : []);
@@ -105,10 +102,7 @@ class RLTHubDiscovery extends IPSModule
                 'type'     => 'ExpansionPanel',
                 'caption'  => '🔎 Suchbereich',
                 'expanded' => true,
-                'items'    => [
-                    ['type' => 'ValidationTextBox', 'name' => 'ScanStartIP', 'caption' => 'Start-IP-Adresse', 'validate' => '^$|^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$'],
-                    ['type' => 'ValidationTextBox', 'name' => 'ScanEndIP', 'caption' => 'End-IP-Adresse', 'validate' => '^$|^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$'],
-                    ['type' => 'Label', 'caption' => 'ℹ️ ' . $hint],
+                'items'    => array_merge($this->rangeItems($prefix), [
                     ['type' => 'NumberSpinner', 'name' => 'ScanPort', 'caption' => 'TCP-Port', 'minimum' => 1, 'maximum' => 65535],
                     ['type' => 'NumberSpinner', 'name' => 'ScanUnitId', 'caption' => 'Unit ID', 'minimum' => 1, 'maximum' => 247],
                     // Schaltfläche zuerst, direkt darunter die eine Kopfzeile (SUITE.md).
@@ -126,7 +120,7 @@ class RLTHubDiscovery extends IPSModule
                             ['type' => 'Label', 'name' => 'ScanDetails', 'caption' => (string)$this->ReadAttributeString('ScanDetails') !== '' ? (string)$this->ReadAttributeString('ScanDetails') : 'Noch nicht gesucht.'],
                         ],
                     ],
-                ],
+                ]),
             ],
             [
                 'type'     => 'ExpansionPanel',
@@ -165,6 +159,45 @@ class RLTHubDiscovery extends IPSModule
             'actions'  => [],
         ];
         return json_encode($form);
+    }
+
+    // Suchbereich nach der Verbund-Konvention „Wert kommt automatisch: Eingabefeld
+    // ersetzen“ (SUITE.md, 21.09.2026): Ist nichts eingetragen und ein eigenes Netz
+    // erkennbar, zeigt das Formular den geltenden Bereich als schreibgeschützte Zeile
+    // (🔗); die Felder stecken in einem eingeklappten Panel zum bewussten Überschreiben.
+    // Eigene Angabe bleibt sichtbar (✏️), ohne erkennbares Netz werden die Felder gebraucht (ℹ️).
+    // Der automatische Wert wird nie per UpdateFormField('value') ins Feld geschrieben.
+    private function rangeLine(string $prefix, string $start, string $end): string
+    {
+        $start = trim($start);
+        $end = trim($end);
+        if ($start !== '' || $end !== '') {
+            return '✏️ Eigener Suchbereich: ' . ($start !== '' ? $start : '?') . ' bis ' . ($end !== '' ? $end : '?') . '.';
+        }
+        if ($prefix !== '') {
+            return '🔗 Suchbereich: ' . $prefix . '.1 bis ' . $prefix . '.254 (automatisch aus dem eigenen Netz).';
+        }
+        return 'ℹ️ Kein eigenes Netz erkannt — Start- und End-IP-Adresse werden gebraucht.';
+    }
+
+    private function rangeItems(string $prefix): array
+    {
+        $start = (string)$this->ReadPropertyString('ScanStartIP');
+        $end = (string)$this->ReadPropertyString('ScanEndIP');
+        $fields = [
+            ['type' => 'ValidationTextBox', 'name' => 'ScanStartIP', 'caption' => 'Start-IP-Adresse', 'validate' => '^$|^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$', 'onChange' => 'RLTD_OnChangeRange($id, $ScanStartIP, $ScanEndIP);'],
+            ['type' => 'ValidationTextBox', 'name' => 'ScanEndIP', 'caption' => 'End-IP-Adresse', 'validate' => '^$|^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$', 'onChange' => 'RLTD_OnChangeRange($id, $ScanStartIP, $ScanEndIP);'],
+        ];
+        $line = ['type' => 'Label', 'name' => 'ScanRangeLine', 'caption' => $this->rangeLine($prefix, $start, $end)];
+        if (trim($start) === '' && trim($end) === '' && $prefix !== '') {
+            return [$line, ['type' => 'ExpansionPanel', 'caption' => 'Eigenen Suchbereich stattdessen verwenden', 'expanded' => false, 'items' => $fields]];
+        }
+        return array_merge([$line], $fields);
+    }
+
+    public function OnChangeRange(string $start, string $end): void
+    {
+        $this->UpdateFormField('ScanRangeLine', 'caption', $this->rangeLine($this->guessLocalSubnetPrefix(), $start, $end));
     }
 
     public function Discover(string $StartIP, string $EndIP, int $Port, int $UnitId): string
@@ -289,7 +322,7 @@ class RLTHubDiscovery extends IPSModule
         return $head . "\n" . implode("\n", $lines);
     }
 
-    private function guessLocalSubnetPrefix(): string
+    protected function guessLocalSubnetPrefix(): string
     {
         $ip = @gethostbyname(gethostname());
         if ($ip === false || $ip === gethostname()) {
