@@ -286,6 +286,28 @@ class RLT_ModbusGatewayClient implements RLT_ModbusClientInterface
     }
 }
 
+class RLT_Ui
+{
+    /** Farbe der „automatisch übernommen“-Zeilen (SUITE.md 21.09.2026), Label-Eigenschaft `color`. */
+    public const AUTO_GREEN = 0x2E8B3D;
+
+    /** Grün für 🔗-Zeilen, sonst -1 (= Standardfarbe). */
+    public static function color(string $caption): int
+    {
+        return strpos($caption, '🔗') === 0 ? self::AUTO_GREEN : -1;
+    }
+
+    /** Label-Element; die Farbe nur setzen, wenn sie vom Standard abweicht. */
+    public static function line(string $name, string $caption): array
+    {
+        $el = ['type' => 'Label', 'name' => $name, 'caption' => $caption];
+        if (self::color($caption) !== -1) {
+            $el['color'] = self::color($caption);
+        }
+        return $el;
+    }
+}
+
 class RLT_Decode
 {
     /** Rohdaten (big-endian 16 Bit) -> 0-indiziertes Registerarray. */
@@ -836,7 +858,7 @@ trait RLT_HubTrait
                 ],
             ],
         ];
-        $line = ['type' => 'Label', 'name' => 'AddressBaseLine', 'caption' => $this->rltAddressBaseLine($device, $base)];
+        $line = RLT_Ui::line('AddressBaseLine', $this->rltAddressBaseLine($device, $base));
         if ($base === 'one' || $base === 'zero') {
             return [$line, $help, $select];
         }
@@ -847,16 +869,23 @@ trait RLT_HubTrait
         ];
     }
 
+    private function rltUpdateAddressBaseLine(string $device, string $addressBase): void
+    {
+        $caption = $this->rltAddressBaseLine($device, $addressBase);
+        $this->UpdateFormField('AddressBaseLine', 'caption', $caption);
+        $this->UpdateFormField('AddressBaseLine', 'color', RLT_Ui::color($caption));
+    }
+
     public function OnChangeAddressBase(string $device, string $addressBase): void
     {
-        $this->UpdateFormField('AddressBaseLine', 'caption', $this->rltAddressBaseLine($device, $addressBase));
+        $this->rltUpdateAddressBaseLine($device, $addressBase);
     }
 
     public function OnChangeDevice(string $device, string $addressBase): void
     {
         $this->UpdateFormField('DeviceConfidence', 'caption', 'ℹ️ ' . (RLT_Drivers::DRIVERS[$device]['confidence'] ?? ''));
         // Die Adress-Basis-Zeile folgt der Auswahl im offenen Formular, nicht dem Speicherstand.
-        $this->UpdateFormField('AddressBaseLine', 'caption', $this->rltAddressBaseLine($device, $addressBase));
+        $this->rltUpdateAddressBaseLine($device, $addressBase);
     }
 
     public function GetConfigurationForm()

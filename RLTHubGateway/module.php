@@ -63,7 +63,7 @@ class RLTHubGateway extends IPSModule
         }
         return [
             ['type' => 'Label', 'caption' => 'So wird verbunden: Der Anschluss läuft über Symcons ModBus-Gateway. Oben unter „Gateway" das ModBus-Gateway wählen (Symcon-Objektbaum: Serial Port → ModBus Gateway, Gateway-Modus RTU für RS485).'],
-            ['type' => 'Label', 'name' => 'SlaveIdLine', 'caption' => $slave],
+            RLT_Ui::line('SlaveIdLine', $slave),
         ];
     }
 

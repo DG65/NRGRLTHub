@@ -723,11 +723,11 @@ $line2 = $find($vp2['items'], function ($e) { return ($e['name'] ?? '') === 'Add
 check("Eigene Adress-Basis: ✏️-Zeile nennt die eigene Angabe und die Vorgabe, das Auswahlfeld bleibt sichtbar (kein Überschreib-Panel)", strpos($line2['caption'], '✏️ Adress-Basis: Doku-Adresse = Wire-Adresse (eigene Angabe; die Vorgabe des Gerätetyps wäre: Doku-Adresse − 1 = Wire-Adresse)') === 0 && $topLevelIn($vp2, 'AddressBase') && $overridePanel($vp2) === null, $line2['caption']);
 $ab->formUpdates = [];
 $ab->OnChangeDevice('proxon_fwt', 'auto');
-$u = null; foreach ($ab->formUpdates as $f) { if ($f[0] === 'AddressBaseLine') { $u = $f; } }
+$u = null; foreach ($ab->formUpdates as $f) { if ($f[0] === 'AddressBaseLine' && $f[1] === 'caption') { $u = $f; } }
 check("Gerätetyp im offenen Formular gewechselt: die Adress-Basis-Zeile folgt der Auswahl (onChange + UpdateFormField)", $u !== null && strpos($u[2], 'Vorgabe des Gerätetyps Proxon FWT 2.0') !== false, json_encode($u));
 $ab->formUpdates = [];
 $ab->OnChangeAddressBase('robatherm_truecontrol', 'one');
-$u = null; foreach ($ab->formUpdates as $f) { if ($f[0] === 'AddressBaseLine') { $u = $f; } }
+$u = null; foreach ($ab->formUpdates as $f) { if ($f[0] === 'AddressBaseLine' && $f[1] === 'caption') { $u = $f; } }
 check("Adress-Basis im offenen Formular geändert: die Zeile folgt (✏️ statt 🔗)", $u !== null && strpos($u[2], '✏️ Adress-Basis: Doku-Adresse − 1 = Wire-Adresse') === 0, json_encode($u));
 $noValueWrites = true; $files = ['libs/RLTCore.php', 'libs/RLTPanels.php', 'RLTHub/module.php', 'RLTHubGateway/module.php', 'RLTHubDiscovery/module.php'];
 foreach ($files as $f) { if (preg_match("/UpdateFormField\([^)]*,\s*'value'\s*,/", file_get_contents(dirname(__DIR__) . '/' . $f))) { $noValueWrites = false; } }
@@ -762,9 +762,33 @@ $rline3 = $find($rp3['items'], function ($e) { return ($e['name'] ?? '') === 'Sc
 check("Suche, kein Netz erkennbar: ℹ️ „Start- und End-IP-Adresse werden gebraucht“, Felder sichtbar", $rline3['caption'] === 'ℹ️ Kein eigenes Netz erkannt — Start- und End-IP-Adresse werden gebraucht.' && $topLevelIn($rp3, 'ScanStartIP'), $rline3['caption']);
 $dn->formUpdates = [];
 $dn->OnChangeRange('', '');
-$ur = null; foreach ($dn->formUpdates as $f) { if ($f[0] === 'ScanRangeLine') { $ur = $f; } }
+$ur = null; foreach ($dn->formUpdates as $f) { if ($f[0] === 'ScanRangeLine' && $f[1] === 'caption') { $ur = $f; } }
 check("Suchbereich im offenen Formular geleert: die Zeile folgt (wieder 🔗 automatisch)", $ur !== null && strpos($ur[2], '🔗 Suchbereich: 192.0.2.1 bis 192.0.2.254') === 0, json_encode($ur));
 check("Der Knopf „Netzwerk durchsuchen“ übergibt die Feldwerte weiterhin (Felder stehen im Formular, auch im Überschreib-Panel)", strpos($dn->GetConfigurationForm(), 'RLTD_Discover($id, $ScanStartIP, $ScanEndIP, $ScanPort, $ScanUnitId)') !== false);
+
+// Farbe: 🔗-Zeilen grün (0x2E8B3D), alle anderen Zeilen Standardfarbe; onChange setzt die Farbe mit
+$GREEN = 0x2E8B3D;
+$colorOk = true; $colorDetail = [];
+foreach ([[$lineRob, true], [$lineProx, true], [$line2, false], [$slaveOk, true], [$slaveNone, false], [$rline, true], [$rline2, false], [$rline3, false]] as $i => [$el, $green]) {
+    $has = ($el['color'] ?? -1) === $GREEN;
+    if ($has !== $green) { $colorOk = false; $colorDetail[] = $i . ':' . ($el['caption'] ?? '?'); }
+}
+check("Farbe: 🔗-Zeilen tragen color = 0x2E8B3D, ✏️/ℹ️-Zeilen behalten die Standardfarbe", $colorOk, implode(' | ', $colorDetail));
+$ab->formUpdates = [];
+$ab->OnChangeAddressBase('robatherm_truecontrol', 'auto');
+$cu = null; foreach ($ab->formUpdates as $f) { if ($f[0] === 'AddressBaseLine' && $f[1] === 'color') { $cu = $f[2]; } }
+$ab->formUpdates = [];
+$ab->OnChangeAddressBase('robatherm_truecontrol', 'zero');
+$cu2 = null; foreach ($ab->formUpdates as $f) { if ($f[0] === 'AddressBaseLine' && $f[1] === 'color') { $cu2 = $f[2]; } }
+check("Farbe folgt der Auswahl im offenen Formular: automatisch → grün, eigene Angabe → -1 (Standardfarbe)", $cu === $GREEN && $cu2 === -1, json_encode([$cu, $cu2]));
+$dn->props['ScanStartIP'] = ''; $dn->props['ScanEndIP'] = '';
+$dn->formUpdates = [];
+$dn->OnChangeRange('', '');
+$dc = null; foreach ($dn->formUpdates as $f) { if ($f[0] === 'ScanRangeLine' && $f[1] === 'color') { $dc = $f[2]; } }
+$dn->formUpdates = [];
+$dn->OnChangeRange('10.0.0.1', '10.0.0.9');
+$dc2 = null; foreach ($dn->formUpdates as $f) { if ($f[0] === 'ScanRangeLine' && $f[1] === 'color') { $dc2 = $f[2]; } }
+check("Suchbereich: Farbe folgt der Eingabe (leer → grün, eigener Bereich → -1)", $dc === $GREEN && $dc2 === -1, json_encode([$dc, $dc2]));
 
 echo "8) Treiberliste und Modulkennungen\n";
 $guids = [];

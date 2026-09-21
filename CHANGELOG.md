@@ -16,6 +16,8 @@
   Eigene Angaben bleiben sichtbar (✏️), ohne erkennbaren Automatikwert werden die Felder gebraucht (ℹ️).
   Im Gateway-Modul zeigt eine Zeile die Slave-ID, die vom ModBus-Gateway kommt. Die Zeilen folgen der
   Auswahl im offenen Formular. Der automatische Wert wird nie ins Eingabefeld geschrieben.
+- Die 🔗-Zeilen (automatisch übernommen) werden grün dargestellt (`color` = 0x2E8B3D, per
+  `UpdateFormField` mitgesetzt), alle anderen Zeilen behalten die Standardfarbe.
 
 ## 0.3.1 (21.09.2026)
 
