@@ -697,6 +697,9 @@ trait RLT_HubTrait
     /** 104 = Verbindung unvollständig, 201 = Gateway/Partner fehlt, 102 = bereit. */
     abstract protected function rltConnectionStatus(): int;
 
+    /** Ziel der Verbindung als Anzeigetext („192.0.2.10:502 (Unit-ID 1)“ bzw. Gateway mit ID/Geräte-ID), leer = keines. */
+    abstract protected function rltConnectionTarget(): string;
+
     protected function rltCreate(): void
     {
         $this->RegisterPropertyBoolean('Active', true);
@@ -737,6 +740,51 @@ trait RLT_HubTrait
         if ($status === 201) {
             IPS_LogMessage(static::MODULE_NAME, 'Instanz #' . $this->InstanceID . ': Kein ModBus-Gateway verbunden — im Instanzformular oben unter „Gateway" eines wählen.');
         }
+    }
+
+
+    // -----------------------------------------------------------------------
+    // Verbund-Konvention „Verbindungen im Formular sichtbar machen“ (SUITE.md,
+    // 21.09.2026): eine live berechnete Statuszeile je Verbindung mit den
+    // tatsächlich gelesenen Werten und ihrer Quelle — nie ein statischer Satz.
+    // -----------------------------------------------------------------------
+    protected function rltStatusLine(): string
+    {
+        if (!(bool)$this->ReadPropertyBoolean('Active')) {
+            return 'ℹ️ Kommunikation ist ausgeschaltet — es wird nichts gelesen.';
+        }
+        $target = $this->rltConnectionTarget();
+        if ($target === '') {
+            return static::TRANSPORT === 'rtu'
+                ? 'ℹ️ Kein ModBus-Gateway verbunden — es wird nichts gelesen. Oben unter „Gateway" eines wählen.'
+                : 'ℹ️ Noch keine IP-Adresse eingetragen — es wird nichts gelesen.';
+        }
+        $seen = (int)$this->ReadAttributeInteger('LastSeenAt');
+        if ($seen === 0) {
+            return '⚠️ Verbunden mit ' . $target . ', aber noch keine gültige Antwort erhalten. „Verbindung jetzt testen" nennt den Grund.';
+        }
+        $when = date('d.m.Y H:i:s', $seen) . ' Uhr';
+        if ($this->GetStatus() === 201) {
+            return '⚠️ Verbunden mit ' . $target . ', die letzte Abfrage ist aber fehlgeschlagen (letzte gültige Antwort ' . $when . '). „Verbindung jetzt testen" nennt den Grund.';
+        }
+        $provided = array_column($this->rltDriver()->getBaseVars(), 0);
+        $parts = [];
+        foreach (['outsideTemp' => 'Außenluft', 'supplyTemp' => 'Zuluft', 'extractTemp' => 'Abluft'] as $ident => $label) {
+            $vid = in_array($ident, $provided, true) ? $this->VarID($ident) : 0;
+            if ($vid) {
+                $parts[] = $label . ' ' . number_format((float)GetValue($vid), 1, ',', '.') . ' °C';
+            }
+        }
+        $vid = in_array('faultSummary', $provided, true) ? $this->VarID('faultSummary') : 0;
+        if ($vid) {
+            $parts[] = 'Störung: ' . (GetValue($vid) ? 'ja' : 'nein');
+        }
+        return '✅ Verbunden mit ' . $target . ' — letzte gültige Antwort ' . $when . '. Zuletzt gelesen (Quelle: die Anlage): ' . ($parts ? implode(', ', $parts) : 'keine Werte') . '.';
+    }
+
+    private function rltRefreshStatusLine(): void
+    {
+        $this->UpdateFormField('ConnectionStatusLine', 'caption', $this->rltStatusLine());
     }
 
     public function OnChangeDevice(string $device): void
@@ -799,7 +847,7 @@ trait RLT_HubTrait
                 'type'     => 'ExpansionPanel',
                 'caption'  => '🔌 Verbindung',
                 'expanded' => true,
-                'items'    => array_merge($this->rltConnectionItems(), [
+                'items'    => array_merge([['type' => 'Label', 'name' => 'ConnectionStatusLine', 'caption' => $this->rltStatusLine()]], $this->rltConnectionItems(), [
                     [
                         'type'    => 'Select',
                         'name'    => 'AddressBase',
@@ -899,6 +947,14 @@ trait RLT_HubTrait
     }
 
     public function TestConnection(): string
+    {
+        $result = $this->rltTestConnection();
+        // Kopfzeile nach der Aktion auffrischen (erst speichern, dann anzeigen).
+        $this->rltRefreshStatusLine();
+        return $result;
+    }
+
+    private function rltTestConnection(): string
     {
         if ($this->rltConnectionStatus() === 104) {
             return '❌ Verbindung unvollständig — Host/Port/Unit-ID prüfen.';

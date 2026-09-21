@@ -33,6 +33,7 @@ function IPS_GetObjectIDByIdent($ident, $parentId)
     trigger_error('Objekt #' . $parentId . '/' . $ident . ' nicht gefunden', E_USER_WARNING);
     return false;
 }
+function GetValue($id) { return $GLOBALS['RLT_OBJ'][$id]['value']; }
 function SetValueFloat($id, $v) { $GLOBALS['RLT_OBJ'][$id]['value'] = (float)$v; return true; }
 function SetValueInteger($id, $v) { $GLOBALS['RLT_OBJ'][$id]['value'] = (int)$v; return true; }
 function SetValueBoolean($id, $v) { $GLOBALS['RLT_OBJ'][$id]['value'] = (bool)$v; return true; }
@@ -503,7 +504,7 @@ foreach ($forms as $name => $form) {
 }
 // Ein News-Panel gibt es nur bei echten Neuigkeiten (keine erfundene Neuigkeit): die Version eines Moduls
 // steht nie über der library.json-Version, und das Modul mit der jüngsten Neuigkeit trägt genau sie.
-check("Neu-Versionen: nie über der library.json-Version, RLTHubGateway (Neuigkeit dieser Version) trägt sie", version_compare(RLTHub::NEWS_VERSION, $lib['version'], '<=') && version_compare(RLTHubDiscovery::NEWS_VERSION, $lib['version'], '<=') && RLTHubGateway::NEWS_VERSION === $lib['version'], $lib['version']);
+check("Neu-Versionen: nie über der library.json-Version und nicht ohne Inhalt (NEWS nicht leer)", version_compare(RLTHub::NEWS_VERSION, $lib['version'], '<=') && version_compare(RLTHubGateway::NEWS_VERSION, $lib['version'], '<=') && version_compare(RLTHubDiscovery::NEWS_VERSION, $lib['version'], '<=') && count(RLTHub::NEWS) > 0 && count(RLTHubGateway::NEWS) > 0 && count(RLTHubDiscovery::NEWS) > 0, $lib['version']);
 check("library.json: nur id/author/name/url/compatibility/version/build/date, compatibility als {version}", array_keys($lib) === ['id', 'author', 'name', 'url', 'compatibility', 'version', 'build', 'date'] && array_keys($lib['compatibility']) === ['version']);
 foreach (['RLTHub', 'RLTHubGateway', 'RLTHubDiscovery'] as $mod) {
     $j = json_decode(file_get_contents("$root/$mod/module.json"), true);
@@ -650,6 +651,55 @@ check("README: Badge-Zeile (Symcon, Modul Version, Symcon Version, License, PayP
 check("README: Check-Style-Badge nur, wenn der Workflow wirklich existiert (nie ein gefälschtes „passing“)", $hasWorkflow === (strpos($readme, 'actions/workflows/check-style.yml') !== false));
 check("README: PayPal-Badge und Verweis „Teil des NRG-Stack“", strpos($readme, 'paypal.me/DietmarGureth') !== false && strpos($readme, '**Teil des NRG-Stack**') !== false);
 check("CHANGELOG nennt die aktuelle Version", strpos(file_get_contents("$root/CHANGELOG.md"), '## ' . $lib['version']) !== false);
+
+echo "10) Verbund-Verbindungen im Formular sichtbar machen (SUITE.md 21.09.2026): live berechnete Statuszeile\n";
+$statusEl = function ($m) {
+    foreach (walkForm(json_decode($m->GetConfigurationForm(), true)['elements']) as $e) { if (($e['name'] ?? '') === 'ConnectionStatusLine') { return $e['caption']; } }
+    return null;
+};
+$stat = new TestHub(970); $stat->Create();
+$stat->props['Active'] = false;
+check("RLTHub: Kommunikation aus -> ℹ️-Zeile im ausgelieferten Formular (rekursiv im Panel gefunden)", strpos((string)$statusEl($stat), 'ℹ️ Kommunikation ist ausgeschaltet') === 0, (string)$statusEl($stat));
+$stat->props['Active'] = true;
+check("RLTHub: keine Adresse -> ℹ️ „Noch keine IP-Adresse“, sagt was dann gilt (es wird nichts gelesen)", strpos((string)$statusEl($stat), 'ℹ️ Noch keine IP-Adresse eingetragen — es wird nichts gelesen') === 0, (string)$statusEl($stat));
+$stat->props['Host'] = '192.0.2.10'; $stat->ApplyChanges();
+check("RLTHub: Adresse, aber noch keine Antwort -> ⚠️ mit Ziel und Hinweis auf den Verbindungstest", (bool)preg_match('/^⚠️ Verbunden mit 192\.0\.2\.10:502 \(Unit-ID 1\), aber noch keine gültige Antwort/u', (string)$statusEl($stat)), (string)$statusEl($stat));
+$stat->mb = new FakeModbus();
+foreach ([2000 => 235, 2018 => 210, 2048 => 220, 2060 => 420, 2736 => 1234, 2351 => 80, 2353 => 75, 1992 => 1] as $a => $v) { $stat->mb->holding[$a] = [$v]; }
+$stat->mb->coils[5] = [1]; $stat->mb->coils[0] = [0];
+$stat->ReadValues();
+$ok = (string)$statusEl($stat);
+check("RLTHub: erfolgreiche Antwort -> ✅ mit Ziel, Zeitstempel TT.MM.JJJJ und den übernommenen Werten samt Quelle", (bool)preg_match('/^✅ Verbunden mit 192\.0\.2\.10:502 \(Unit-ID 1\) — letzte gültige Antwort \d\d\.\d\d\.\d{4} \d\d:\d\d:\d\d Uhr\. Zuletzt gelesen \(Quelle: die Anlage\): Außenluft 23,5 °C, Zuluft 21,0 °C, Abluft 22,0 °C, Störung: ja\.$/u', $ok), $ok);
+check("RLTHub: der statische Ersatzsatz ist weg (kein „wird automatisch erkannt“/„sobald installiert“ im Verbindungs-Panel)", strpos(json_encode(json_decode($stat->GetConfigurationForm(), true)['elements'], JSON_UNESCAPED_UNICODE), 'sobald installiert') === false);
+$stat->mb = new FakeModbus(); $stat->ReadValues();
+check("RLTHub: danach Ausfall -> ⚠️ „letzte Abfrage fehlgeschlagen“ mit letzter gültiger Antwort", (bool)preg_match('/^⚠️ Verbunden mit 192\.0\.2\.10:502.*die letzte Abfrage ist aber fehlgeschlagen \(letzte gültige Antwort \d\d\.\d\d\.\d{4}/u', (string)$statusEl($stat)), (string)$statusEl($stat));
+$stat->formUpdates = [];
+$stat->TestConnection();
+$upd = null; foreach ($stat->formUpdates as $u) { if ($u[0] === 'ConnectionStatusLine') { $upd = $u; } }
+check("Verbindungstest frischt die Statuszeile im offenen Formular auf (UpdateFormField auf ConnectionStatusLine)", $upd !== null && $upd[1] === 'caption' && strpos($upd[2], '⚠️') === 0, json_encode($upd));
+
+$gw2 = new TestGw(971); $gw2->Create(); $gw2->ApplyChanges();
+check("Gateway: kein ModBus-Gateway -> ℹ️ „Kein ModBus-Gateway verbunden — es wird nichts gelesen“", strpos((string)$statusEl($gw2), 'ℹ️ Kein ModBus-Gateway verbunden — es wird nichts gelesen') === 0, (string)$statusEl($gw2));
+$GLOBALS['RLT_INSTANCES'][971] = ['ConnectionID' => 972];
+$GLOBALS['RLT_INSTANCES'][972] = ['module' => '{A5F663AB-C400-4FE5-B207-4D67CC030564}', 'props' => ['DeviceID' => 41]];
+$gw2->ApplyChanges();
+check("Gateway: mit Gateway, noch keine Antwort -> ⚠️ mit Gateway-Name, Instanz-ID und Geräte-ID", strpos((string)$statusEl($gw2), '⚠️ Verbunden mit ModBus-Gateway „Instanz 972" (#972, Geräte-ID 41), aber noch keine gültige Antwort') === 0, (string)$statusEl($gw2));
+$gw2->parentFn = function (string $json) { $r = json_decode($json, true); $v = [198 => 1420, 195 => 1825, 196 => 2420, 47 => 0, 469 => 1069, 16 => 1]; return isset($v[$r['Address']]) ? chr($r['Function']) . "\x02" . pack('n', $v[$r['Address']]) : false; };
+$gw2->ReadValues();
+$gok = (string)$statusEl($gw2);
+check("Gateway: erfolgreiche Antwort -> ✅ mit Gateway, Werten (14,2 / 18,3 = 18,25 gerundet / 24,2 °C, keine Störung) und Quelle", (bool)preg_match('/^✅ Verbunden mit ModBus-Gateway „Instanz 972" \(#972, Geräte-ID 41\) — letzte gültige Antwort .* Außenluft 14,2 °C, Zuluft 18,3 °C, Abluft 24,2 °C, Störung: nein\.$/u', $gok), $gok);
+unset($GLOBALS['RLT_INSTANCES'][971], $GLOBALS['RLT_INSTANCES'][972]);
+
+// Suche: Gateway-Übersicht mit Zustandssymbolen
+$dsum = new RLTHubDiscovery(973); $dsum->Create();
+$sumEl = function ($m) { foreach (walkForm(json_decode($m->GetConfigurationForm(), true)['elements']) as $e) { if (strpos($e['caption'] ?? '', 'ModBus-Gateway') !== false && strpos($e['caption'] ?? '', 'RLTHubGateway') !== false && ($e['type'] ?? '') === 'Label' && (strpos($e['caption'], 'ℹ️') === 0 || strpos($e['caption'], '✅') === 0 || strpos($e['caption'], '⚠️') === 0)) { return $e['caption']; } } return null; };
+check("Suche: weder Gateway noch RLTHubGateway -> ℹ️ mit Folge (RS485 nicht einbindbar)", strpos((string)$sumEl($dsum), 'ℹ️ Keine ModBus-Gateways und keine RLTHubGateway-Instanzen gefunden') === 0, (string)$sumEl($dsum));
+$GLOBALS['RLT_INSTANCES'][974] = ['module' => '{A5F663AB-C400-4FE5-B207-4D67CC030564}', 'props' => ['DeviceID' => 41]];
+$GLOBALS['RLT_INSTANCES'][975] = ['module' => RLTHubGateway::MODULE_GUID, 'props' => [], 'ConnectionID' => 974];
+check("Suche: Gateway und verbundene RLTHubGateway -> ✅ mit Zahlen", strpos((string)$sumEl($dsum), '✅ 1 ModBus-Gateway(s) und 1 RLTHubGateway-Instanz(en) gefunden') === 0, (string)$sumEl($dsum));
+$GLOBALS['RLT_INSTANCES'][975]['ConnectionID'] = 0;
+check("Suche: RLTHubGateway ohne Gateway -> ⚠️ mit Auswahlhinweis", strpos((string)$sumEl($dsum), '⚠️ 1 RLTHubGateway-Instanz(en) ohne ModBus-Gateway') === 0, (string)$sumEl($dsum));
+unset($GLOBALS['RLT_INSTANCES'][974], $GLOBALS['RLT_INSTANCES'][975]);
 
 echo "8) Treiberliste und Modulkennungen\n";
 $guids = [];

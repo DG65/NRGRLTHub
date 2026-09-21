@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.2 (21.09.2026)
+
+- Verbund-Konvention „Verbindungen im Formular sichtbar machen" (SUITE.md, 21.09.2026): Im Panel „Verbindung"
+  von RLTHub und RLTHubGateway steht jetzt eine live berechnete Statuszeile — ℹ️ nichts eingetragen bzw.
+  kein ModBus-Gateway (mit Folge), ⚠️ verbunden ohne gültige Antwort bzw. letzte Abfrage fehlgeschlagen,
+  ✅ verbunden mit Ziel (Adresse oder Gateway mit Instanz-ID und Geräte-ID), Zeitpunkt der letzten
+  gültigen Antwort und den zuletzt gelesenen Werten samt Quelle. „Verbindung jetzt testen" frischt sie auf.
+- Die Gateway-Übersicht der Suche zeigt ihren Zustand (ℹ️ nichts gefunden, ✅ Zahlen, ⚠️ RLTHubGateway ohne Gateway).
+- Prüfstand: jeder Zustand wird im ausgelieferten Formular gefunden, ein statischer Ersatzsatz lässt ihn
+  rot werden (164 Prüfungen).
+
 ## 0.3.1 (21.09.2026)
 
 - Proxon FWT 2.0 an einer echten Anlage geprüft (Rohwert gegen Display, über das ModBus-Gateway):

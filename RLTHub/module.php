@@ -59,6 +59,12 @@ class RLTHub extends IPSModule
         return trim((string)$this->ReadPropertyString('Host')) === '' ? 104 : 102;
     }
 
+    protected function rltConnectionTarget(): string
+    {
+        $host = trim((string)$this->ReadPropertyString('Host'));
+        return $host === '' ? '' : $host . ':' . (int)$this->ReadPropertyInteger('Port') . ' (Unit-ID ' . (int)$this->ReadPropertyInteger('UnitId') . ')';
+    }
+
     protected function rltClient(): RLT_ModbusClientInterface
     {
         return new RLT_ModbusTcpClient(

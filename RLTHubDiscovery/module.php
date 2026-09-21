@@ -266,15 +266,27 @@ class RLTHubDiscovery extends IPSModule
 
     private function gatewaySummary(): string
     {
-        $lines = [];
-        foreach (IPS_GetInstanceListByModuleID(self::MODBUS_GATEWAY_GUID) as $iid) {
-            $lines[] = '• ModBus-Gateway „' . IPS_GetName($iid) . '" (#' . $iid . ', Geräte-ID ' . @IPS_GetProperty($iid, 'DeviceID') . ')';
+        $gateways = IPS_GetInstanceListByModuleID(self::MODBUS_GATEWAY_GUID);
+        $hubs = IPS_GetInstanceListByModuleID(self::GATEWAY_HUB_GUID);
+        if (count($gateways) === 0 && count($hubs) === 0) {
+            return 'ℹ️ Keine ModBus-Gateways und keine RLTHubGateway-Instanzen gefunden — RS485-Geräte lassen sich ohne ModBus-Gateway nicht einbinden.';
         }
-        foreach (IPS_GetInstanceListByModuleID(self::GATEWAY_HUB_GUID) as $iid) {
+        $lines = [];
+        $unconnected = 0;
+        foreach ($gateways as $iid) {
+            $lines[] = '• ModBus-Gateway „' . IPS_GetName($iid) . '" (#' . $iid . ', Geräte-ID ' . (int)@IPS_GetProperty($iid, 'DeviceID') . ')';
+        }
+        foreach ($hubs as $iid) {
             $conn = (int)(@IPS_GetInstance($iid)['ConnectionID'] ?? 0);
+            if ($conn === 0) {
+                $unconnected++;
+            }
             $lines[] = '• RLTHubGateway „' . IPS_GetName($iid) . '" (#' . $iid . ') ' . ($conn > 0 ? 'verbunden mit #' . $conn : 'ohne Gateway');
         }
-        return count($lines) > 0 ? implode("\n", $lines) : 'Keine ModBus-Gateways und keine RLTHubGateway-Instanzen gefunden.';
+        $head = $unconnected > 0
+            ? '⚠️ ' . $unconnected . ' RLTHubGateway-Instanz(en) ohne ModBus-Gateway — dort oben unter „Gateway" eines wählen:'
+            : '✅ ' . count($gateways) . ' ModBus-Gateway(s) und ' . count($hubs) . ' RLTHubGateway-Instanz(en) gefunden:';
+        return $head . "\n" . implode("\n", $lines);
     }
 
     private function guessLocalSubnetPrefix(): string

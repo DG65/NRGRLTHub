@@ -51,7 +51,7 @@ class RLTHubGateway extends IPSModule
     protected function rltConnectionItems(): array
     {
         return [
-            ['type' => 'Label', 'caption' => 'ℹ️ Der Anschluss läuft über Symcons ModBus-Gateway: oben unter „Gateway" das ModBus-Gateway wählen (Symcon-Objektbaum: Serial Port → ModBus Gateway, Gateway-Modus RTU für RS485). Die Slave-ID (Modbus-Adresse des Geräts) wird am Gateway eingestellt („Geräte-ID"), nicht hier.'],
+            ['type' => 'Label', 'caption' => 'So wird verbunden: Der Anschluss läuft über Symcons ModBus-Gateway. Oben unter „Gateway" das ModBus-Gateway wählen (Symcon-Objektbaum: Serial Port → ModBus Gateway, Gateway-Modus RTU für RS485). Die Slave-ID (Modbus-Adresse des Geräts) wird am Gateway eingestellt („Geräte-ID"), nicht hier.'],
         ];
     }
 
@@ -60,6 +60,16 @@ class RLTHubGateway extends IPSModule
         $inst = @IPS_GetInstance($this->InstanceID);
         $parent = is_array($inst) ? (int)($inst['ConnectionID'] ?? 0) : 0;
         return $parent > 0 && @IPS_InstanceExists($parent);
+    }
+
+    protected function rltConnectionTarget(): string
+    {
+        if (!$this->hasGatewayParent()) {
+            return '';
+        }
+        $parent = (int)(@IPS_GetInstance($this->InstanceID)['ConnectionID'] ?? 0);
+        $deviceId = @IPS_GetProperty($parent, 'DeviceID');
+        return 'ModBus-Gateway „' . IPS_GetName($parent) . '" (#' . $parent . ($deviceId !== false && $deviceId !== null ? ', Geräte-ID ' . (int)$deviceId : '') . ')';
     }
 
     protected function rltConnectionStatus(): int
