@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.1 (28.09.2026)
+
+- **Fix (Fund EMS, Prüfung gegen SUITE.md „Verbund-Verbindungen im Formular sichtbar machen"):** Das
+  IP-Adressfeld in RLTHub zeigte nur einen festen Satz ("trägt RLTHubDiscovery automatisch ein"), ohne zu
+  prüfen, ob das stimmt. Jetzt eine echte Live-Zeile: `RLTHubDiscovery` bekommt eine neue Abfrage
+  `GetLastMatch()`, die genau feststellt, ob die eingetragene Adresse tatsächlich Teil des letzten
+  Suchergebnisses war. Nur dann 🔗 (mit Fund-Zeitpunkt und erkanntem Gerätetyp), sonst ✏️ eigene Angabe oder
+  ℹ️ wenn noch nichts eingetragen ist — bei automatischer Herkunft steckt das Feld im eingeklappten
+  Überschreib-Panel, wie bei Adress-Basis und Suchbereich. Die Zeile folgt sofort, wenn die Adresse von Hand
+  geändert wird; RLTHubGateway und RLTHubDiscovery waren von diesem Fund nicht betroffen.
+
 ## 0.4.0 (21.09.2026)
 
 - Neuer Gerätetyp **Pichler LG (ES2020-Steuerung, z. B. LG 350)**, Modbus RTU über RLTHubGateway und Modbus TCP

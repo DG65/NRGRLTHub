@@ -299,6 +299,31 @@ class RLTHubDiscovery extends IPSModule
         return 0;
     }
 
+    /**
+     * Echte Live-Prüfung für RLTHub::rltConnectionItems() (SUITE.md „Verbund-
+     * Verbindungen im Formular sichtbar machen"): war diese genaue Adresse Teil
+     * des LETZTEN Suchergebnisses? Nur dann darf RLTHub sie als 🔗 automatisch
+     * übernommen ausweisen — nichts wird geraten oder dauerhaft verknüpft, denn
+     * nach dem Anlegen ist der Host-Wert eine normale Property wie jede andere.
+     */
+    public function GetLastMatch(string $Host, int $Port, int $UnitId): array
+    {
+        $rows = json_decode((string)$this->ReadAttributeString('ResultsJSON'), true);
+        if (!is_array($rows)) {
+            return ['found' => false];
+        }
+        foreach ($rows as $r) {
+            if (($r['host'] ?? '') === $Host && (int)($r['port'] ?? 0) === $Port && (int)($r['unit'] ?? 0) === $UnitId) {
+                return [
+                    'found'  => true,
+                    'device' => RLT_Drivers::DRIVERS[$r['device']]['caption'] ?? (string)$r['device'],
+                    'ts'     => (int)$this->ReadAttributeInteger('LastScanTs'),
+                ];
+            }
+        }
+        return ['found' => false];
+    }
+
     private function gatewaySummary(): string
     {
         $gateways = IPS_GetInstanceListByModuleID(self::MODBUS_GATEWAY_GUID);

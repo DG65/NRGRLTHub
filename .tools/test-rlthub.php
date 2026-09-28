@@ -62,6 +62,7 @@ foreach (['RLT', 'RLTGW', 'RLTD'] as $pre) {
     eval("function {$pre}_AdoptDismissState(\$id, \$what, \$value) { return \$GLOBALS['RLT_MODOBJ'][\$id]->AdoptDismissState(\$what, \$value); }");
     eval("function {$pre}_GetDismissState(\$id) { return \$GLOBALS['RLT_MODOBJ'][\$id]->GetDismissState(); }");
 }
+function RLTD_GetLastMatch($id, $host, $port, $unitId) { return $GLOBALS['RLT_MODOBJ'][$id]->GetLastMatch($host, $port, $unitId); }
 
 class IPSModule
 {
@@ -617,7 +618,7 @@ check("Verbindungstest ohne Gateway: verständliche Fehlermeldung statt Absturz"
 $ni = new RLTHub(950); $ni->Create();
 check("Neuinstallation: Vorgaben generisch (kein Host, Standardport 502, Unit-ID 1, Adress-Basis automatisch, aktiv)", $ni->props['Host'] === '' && $ni->props['Port'] === 502 && $ni->props['UnitId'] === 1 && $ni->props['AddressBase'] === 'auto');
 $niAll = json_encode(walkForm(json_decode($ni->GetConfigurationForm(), true)['elements']), JSON_UNESCAPED_UNICODE);
-check("Neuinstallation: Hinweis, dass die Gerätetyp-Vorbelegung nur der erste Listeneintrag ist, und wann die Adresse von Hand nötig ist", strpos($niAll, 'nur der erste Eintrag der Liste') !== false && strpos($niAll, 'trägt RLTHubDiscovery automatisch ein') !== false);
+check("Neuinstallation: Hinweis, dass die Gerätetyp-Vorbelegung nur der erste Listeneintrag ist, und ehrliche ℹ️-Zeile statt Pauschalsatz zur Adresse", strpos($niAll, 'nur der erste Eintrag der Liste') !== false && strpos($niAll, 'ℹ️ Noch keine IP-Adresse eingetragen') !== false);
 $dscNew = new RLTHubDiscovery(951); $dscNew->Create();
 check("Neuinstallation Suche: Suchbereich leer vorbelegt (wird aus dem eigenen Netz abgeleitet, nicht aus dem des Autors)", $dscNew->props['ScanStartIP'] === '' && $dscNew->props['ScanEndIP'] === '');
 
@@ -865,6 +866,50 @@ check("Suche findet das Pichler-Gerät (nur als Pichler, nicht zusätzlich als R
 $pcfg = null; foreach ($dp->formUpdates as $u) { if ($u[0] === 'Configurator') { $pcfg = json_decode($u[2], true); } }
 check("Suche legt für den Fund eine RLTHub-Instanz mit Gerätetyp pichler_lg an", $pcfg !== null && $pcfg[0]['create']['configuration']['Device'] === 'pichler_lg', json_encode($pcfg));
 stopServer($pz);
+
+echo "13) RLTHub-Adresse: echte Live-Prüfung statt Pauschalsatz (EMS-Fund 28.09.2026)\n";
+$addrEl = function ($m) { foreach (walkForm(json_decode($m->GetConfigurationForm(), true)['elements']) as $e) { if (($e['name'] ?? '') === 'AddressLine') { return $e; } } return null; };
+$vpAddr = function ($m) { foreach (json_decode($m->GetConfigurationForm(), true)['elements'] as $e) { if (strpos($e['caption'] ?? '', '🔌 Verbindung') === 0) { return $e; } } return null; };
+$ah = new RLTHub(995); $ah->Create();
+check("Ohne Host: ℹ️-Zeile nennt, was fehlt und wie es automatisch ginge (RLTHubDiscovery), keine Behauptung", $addrEl($ah)['caption'] === 'ℹ️ Noch keine IP-Adresse eingetragen — wird für die Verbindung gebraucht. Über „RLTHubDiscovery" gefundene Anlagen lassen sich mit einem Klick übernehmen.', $addrEl($ah)['caption']);
+$ah->props['Host'] = '192.0.2.50';
+check("Host von Hand gesetzt, kein Suchlauf dahinter: ✏️ Eigene Angabe, Feld bleibt sichtbar (kein Überschreib-Panel nötig)", $addrEl($ah)['caption'] === '✏️ Eigene Angabe: 192.0.2.50:502 (Unit-ID 1).' && $vpAddr($ah) !== null && count(array_filter($vpAddr($ah)['items'], function ($i) { return ($i['name'] ?? '') === 'Host'; })) === 1);
+
+$disc995 = new RLTHubDiscovery(996); $disc995->Create();
+$good3 = startServer('map', ['3:2000' => 235, '3:2018' => 210, '3:2048' => 220]);
+$disc995->Discover('127.0.0.1', '127.0.0.1', $good3[1], 1);
+stopServer($good3);
+$m0 = $disc995->GetLastMatch('127.0.0.1', $good3[1], 1);
+check("RLTHubDiscovery::GetLastMatch findet den echten Fund (Gerätetyp + Zeitpunkt der Suche)", $m0['found'] === true && $m0['device'] === 'Robatherm TrueControl' && $m0['ts'] > 0, json_encode($m0));
+check("GetLastMatch: andere Adresse/Port/Unit-ID ist kein Treffer (kein Raten)", $disc995->GetLastMatch('127.0.0.1', $good3[1], 2)['found'] === false && $disc995->GetLastMatch('198.51.100.1', $good3[1], 1)['found'] === false);
+
+$GLOBALS['RLT_INSTANCES'][996] = ['module' => RLTHubDiscovery::MODULE_GUID, 'props' => []];
+$ad = new RLTHub(997); $ad->Create();
+$ad->props['Host'] = '127.0.0.1'; $ad->props['Port'] = $good3[1]; $ad->props['UnitId'] = 1;
+$line = $addrEl($ad)['caption'];
+check("Von RLTHubDiscovery gefundene Adresse: 🔗-Zeile nennt Gerät und Suchzeitpunkt, ECHT geprüft (nicht nur behauptet)", (bool)preg_match('/^🔗 IP-Adresse: 127\.0\.0\.1:\d+ \(Unit-ID 1\), automatisch von RLTHubDiscovery übernommen \(gefunden \d\d\.\d\d\.\d{4} \d\d:\d\d:\d\d Uhr als Robatherm TrueControl\)\.$/u', $line), $line);
+check("Bei automatischer Adresse: Feld steckt im eingeklappten Überschreib-Panel, außerhalb nicht sichtbar", (function () use ($ad, $vpAddr) { $p = $vpAddr($ad); $op = null; foreach ($p['items'] as $i) { if (($i['type'] ?? '') === 'ExpansionPanel' && strpos($i['caption'], 'Eigene Verbindung stattdessen verwenden') === 0) { $op = $i; } } return $op !== null && $op['expanded'] === false && count(array_filter($op['items'], function ($i) { return ($i['name'] ?? '') === 'Host'; })) === 1 && count(array_filter($p['items'], function ($i) { return ($i['name'] ?? '') === 'Host'; })) === 0; })());
+check("Farbe: automatische Adress-Zeile ist grün, wie die anderen 🔗-Zeilen", ($addrEl($ad)['color'] ?? -1) === 0x2E8B3D);
+$ad->formUpdates = [];
+$ad->OnChangeHost('203.0.113.9');
+$u = null; $uc = null; foreach ($ad->formUpdates as $f) { if ($f[0] === 'AddressLine' && $f[1] === 'caption') { $u = $f[2]; } if ($f[0] === 'AddressLine' && $f[1] === 'color') { $uc = $f[2]; } }
+check("Tippt der Nutzer selbst eine andere Adresse: Zeile wechselt sofort auf ✏️ (nicht mehr grün) — kein UpdateFormField('value') aufs Feld selbst", $u === '✏️ Eigene Angabe: 203.0.113.9:' . $good3[1] . ' (Unit-ID 1).' && $uc === -1, json_encode([$u, $uc]));
+unset($GLOBALS['RLT_INSTANCES'][996]);
+
+// Nach einer neuen, andersartigen Suche gilt die alte Adresse nicht mehr automatisch (kein dauerhaftes Merken, nur der LETZTE Fund zählt).
+$GLOBALS['RLT_INSTANCES'][998] = ['module' => RLTHubDiscovery::MODULE_GUID, 'props' => []];
+$disc998 = new RLTHubDiscovery(998); $disc998->Create();
+$g1 = startServer('map', ['3:2000' => 235, '3:2018' => 210, '3:2048' => 220]);
+$disc998->Discover('127.0.0.1', '127.0.0.1', $g1[1], 1);
+$portFirst = $g1[1];
+stopServer($g1);
+$g2 = startServer('zeros');
+$disc998->Discover('127.0.0.1', '127.0.0.1', $g2[1], 1);
+stopServer($g2);
+$ae = new RLTHub(999); $ae->Create();
+$ae->props['Host'] = '127.0.0.1'; $ae->props['Port'] = $portFirst; $ae->props['UnitId'] = 1;
+check("Ein früherer Fund, der aus dem letzten Suchergebnis herausgefallen ist, gilt nicht mehr als automatisch (✏️ statt 🔗) — nichts wird dauerhaft geglaubt", strpos($addrEl($ae)['caption'], '✏️ Eigene Angabe') === 0, $addrEl($ae)['caption']);
+unset($GLOBALS['RLT_INSTANCES'][998]);
 
 echo "8) Treiberliste und Modulkennungen\n";
 $guids = [];
