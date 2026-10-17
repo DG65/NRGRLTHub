@@ -910,7 +910,7 @@ trait RLT_HubTrait
         $this->SetTimerInterval('ReadValuesTimer', $status === 104 ? 0 : max(5, (int)$this->ReadPropertyInteger('PollInterval')) * 1000);
         $this->SetStatus($status);
         if ($status === 201) {
-            IPS_LogMessage(static::MODULE_NAME, 'Instanz #' . $this->InstanceID . ': Kein ModBus-Gateway verbunden — im Instanzformular oben unter „Gateway" eines wählen.');
+            $this->LogMessage('Kein ModBus-Gateway verbunden — im Instanzformular oben unter „Gateway" eines wählen.', KL_WARNING);
         }
     }
 
@@ -1150,7 +1150,7 @@ trait RLT_HubTrait
         if ($this->rltConnectionStatus() === 201) {
             $this->SetStatus(201);
             if ($previous !== 201) {
-                IPS_LogMessage(static::MODULE_NAME, 'Instanz #' . $this->InstanceID . ': Kein ModBus-Gateway verbunden — im Instanzformular oben unter „Gateway" eines wählen.');
+                $this->LogMessage('Kein ModBus-Gateway verbunden — im Instanzformular oben unter „Gateway" eines wählen.', KL_WARNING);
             }
             return;
         }
@@ -1164,7 +1164,7 @@ trait RLT_HubTrait
         $this->SetStatus(201);
         // Dauerhaft loggen, aber nur beim Übergang — nicht bei jedem Takt.
         if ($previous !== 201) {
-            IPS_LogMessage(static::MODULE_NAME, 'Instanz #' . $this->InstanceID . ': Anlage nicht erreichbar oder keine gültige Antwort' . $this->rltFailureReason($mb) . '.');
+            $this->LogMessage('Anlage nicht erreichbar oder keine gültige Antwort' . $this->rltFailureReason($mb) . '.', KL_WARNING);
         }
     }
 

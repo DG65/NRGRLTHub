@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.2 (17.10.2026)
+
+- **Store-Review (SUITE.md Checkliste Punkt 15, EMS-Fund):** Logging in den Modulklassen lief an drei
+  Stellen über das globale `IPS_LogMessage($sender, $text)` (fehlende Verbindung zum ModBus-Gateway,
+  nicht erreichbare Anlage). Jetzt `$this->LogMessage($text, KL_WARNING)` — die Instanz wird dabei
+  selbst zum Absender, wie es Symcon vorsieht. Keine sichtbare Änderung für Nutzer, nur der Eintrag im
+  Symcon-Protokoll ist jetzt korrekt der Instanz zugeordnet. Der Prüfstand lehnt `IPS_LogMessage(` in
+  `module.php`/`libs/*.php` jetzt grundsätzlich ab.
+
 ## 0.4.1 (28.09.2026)
 
 - **Fix (Fund EMS, Prüfung gegen SUITE.md „Verbund-Verbindungen im Formular sichtbar machen"):** Das

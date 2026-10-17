@@ -13,7 +13,7 @@
  * Fake-Hub und konnten das nicht sehen.
  */
 
-foreach (['VARIABLETYPE_BOOLEAN' => 0, 'VARIABLETYPE_INTEGER' => 1, 'VARIABLETYPE_FLOAT' => 2, 'VARIABLETYPE_STRING' => 3, 'KR_READY' => 10103] as $c => $v) {
+foreach (['VARIABLETYPE_BOOLEAN' => 0, 'VARIABLETYPE_INTEGER' => 1, 'VARIABLETYPE_FLOAT' => 2, 'VARIABLETYPE_STRING' => 3, 'KR_READY' => 10103, 'KL_MESSAGE' => 10201, 'KL_NOTIFY' => 10203, 'KL_WARNING' => 10204, 'KL_ERROR' => 10205, 'KL_DEBUG' => 10206, 'KL_CUSTOM' => 10207] as $c => $v) {
     if (!defined($c)) { define($c, $v); }
 }
 
@@ -98,6 +98,7 @@ class IPSModule
     public function SetStatus($s) { $this->status = $s; $this->statusSeen[$s] = true; }
     public function GetStatus() { return $this->status; }
     public function UpdateFormField($f, $k, $v) { $this->formUpdates[] = [$f, $k, $v]; }
+    public function LogMessage($message, $level) { $GLOBALS['RLT_LOG'][] = [static::MODULE_NAME, $message, $level, $this->InstanceID]; }
     public function SendDebug($a, $b, $c) {}
     protected function SendDataToParent($json) { return $this->parentFn ? ($this->parentFn)($json) : false; }
     private function reg($ident, $name, $profile, $type)
@@ -602,7 +603,7 @@ $GLOBALS['RLT_RUNLEVEL'] = KR_READY;
 $GLOBALS['RLT_LOG'] = [];
 $hl = new TestHub(942); $hl->Create(); $hl->props['Host'] = '192.0.2.1'; $hl->ApplyChanges(); $hl->mb = new FakeModbus();
 $hl->ReadValues(); $hl->ReadValues(); $hl->ReadValues();
-check("Ausfall wird einmalig im Symcon-Protokoll vermerkt (nicht bei jedem Takt)", count($GLOBALS['RLT_LOG']) === 1 && $GLOBALS['RLT_LOG'][0][0] === 'RLTHub' && strpos($GLOBALS['RLT_LOG'][0][1], '#942') !== false, json_encode($GLOBALS['RLT_LOG']));
+check("Ausfall wird einmalig im Symcon-Protokoll vermerkt (nicht bei jedem Takt), über \$this->LogMessage() mit KL_WARNING", count($GLOBALS['RLT_LOG']) === 1 && $GLOBALS['RLT_LOG'][0][0] === 'RLTHub' && $GLOBALS['RLT_LOG'][0][2] === KL_WARNING && $GLOBALS['RLT_LOG'][0][3] === 942 && strpos($GLOBALS['RLT_LOG'][0][1], 'Anlage nicht erreichbar') !== false, json_encode($GLOBALS['RLT_LOG']));
 foreach ([2000 => 235, 2018 => 210, 2048 => 220, 2060 => 420, 2736 => 1234, 2351 => 80, 2353 => 75, 1992 => 1] as $addr => $val) { $hl->mb->holding[$addr] = [$val]; }
 $hl->mb->coils[5] = [0]; $hl->mb->coils[0] = [1];
 $hl->ReadValues();
@@ -733,6 +734,12 @@ check("Adress-Basis im offenen Formular geändert: die Zeile folgt (✏️ statt
 $noValueWrites = true; $files = ['libs/RLTCore.php', 'libs/RLTPanels.php', 'RLTHub/module.php', 'RLTHubGateway/module.php', 'RLTHubDiscovery/module.php'];
 foreach ($files as $f) { if (preg_match("/UpdateFormField\([^)]*,\s*'value'\s*,/", file_get_contents(dirname(__DIR__) . '/' . $f))) { $noValueWrites = false; } }
 check("Nie den automatischen Wert per UpdateFormField('…', 'value', …) ins Eingabefeld schreiben (Quelltext-Prüfung)", $noValueWrites);
+
+// Verbund-Konvention (SUITE.md Store-Review Punkt 15, EMS-Fund 17.10.2026): in Modulklassen
+// nur $this->LogMessage($text, KL_…), nie das globale IPS_LogMessage($sender, $text).
+$noGlobalLogMessage = true;
+foreach ($files as $f) { if (strpos(file_get_contents(dirname(__DIR__) . '/' . $f), 'IPS_LogMessage(') !== false) { $noGlobalLogMessage = false; } }
+check("Nie IPS_LogMessage(), nur \$this->LogMessage() in Modulklassen (Quelltext-Prüfung, SUITE.md Punkt 15)", $noGlobalLogMessage);
 
 // Gateway: Slave-ID kommt vom ModBus-Gateway, kein Eingabefeld
 $sg = new TestGw(982); $sg->Create(); $sg->ApplyChanges();
