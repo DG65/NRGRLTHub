@@ -23,7 +23,7 @@ class RLTHubGateway extends IPSModule
     public const DEFAULT_DEVICE = 'proxon_fwt';
     public const TRANSPORT = 'rtu';
 
-    public const NEWS_VERSION = '0.4.0';
+    public const NEWS_VERSION = '0.4.3';
     public const FORUM_THREAD_URL = 'https://community.symcon.de/t/modul-nrg-stack-rlthub-lueftungsanlagen-rlt-kwl-per-modbus-anbinden-robatherm-truecontrol-proxon-fwt/144442';
     public const LICENSE_URL = 'https://github.com/DG65/NRGRLTHub/blob/beta/LICENSE';
     public const PURPOSE = [
@@ -32,6 +32,7 @@ class RLTHubGateway extends IPSModule
         'Das Modul liest nur — es steuert die Anlage nicht.',
     ];
     public const NEWS = [
+        '• 🔧 Archiv: Neue Option „Messwerte im Archiv aufzeichnen“ (Standard aus). Bisher schaltete das Modul die Aufzeichnung bei jedem Übernehmen von selbst ein. Jetzt entscheidest du; das Modul schaltet eine Aufzeichnung nie aus. Bestehende Aufzeichnungen bleiben unverändert.',
         '• 🆕 Neuer Gerätetyp: Pichler LG mit ES2020-Steuerung (z. B. LG 350) über Modbus RTU (Werk: 19200 Baud, Parität gerade, Adresse 20). Temperaturen, berechneter WRG-Wirkungsgrad, Zu-/Abluft-Volumenstrom in m³/h, Summenstörmeldung, Filtermeldung und Restzeit bis zum Filterwechsel.',
         '• ⚠️ Noch an keiner Pichler-Anlage geprüft (Adress-Basis, Zuordnung der Felder). Details im Panel „Dokumentation & Hilfe“. Testberichte sind willkommen.',
     ];

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.3 (27.10.2026)
+
+- **Store-Review (SUITE.md 9k, Prüfung vor Stable):** Das Modul schaltete die Archiv-Aufzeichnung der
+  Messwerte bei jedem Übernehmen von selbst ein, ohne Option und auch gegen eine vom Nutzer abgeschaltete
+  Aufzeichnung. Neu: Option „Messwerte im Archiv aufzeichnen“ (Standard aus) in RLTHub und RLTHubGateway.
+  Nur bei gesetztem Haken wird die Aufzeichnung eingeschaltet; das Modul schaltet nie etwas aus. Bestehende
+  Aufzeichnungen bleiben unverändert, werden aber nicht mehr von selbst nachgezogen.
+
 ## 0.4.2 (17.10.2026)
 
 - **Store-Review (SUITE.md Checkliste Punkt 15, EMS-Fund):** Logging in den Modulklassen lief an drei

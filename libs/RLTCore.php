@@ -880,6 +880,7 @@ trait RLT_HubTrait
         // 'auto' = Vorgabe des Treibers, 'one' = Wire = Doku − 1, 'zero' = Wire = Doku
         $this->RegisterPropertyString('AddressBase', 'auto');
         $this->RegisterPropertyInteger('PollInterval', 60);
+        $this->RegisterPropertyBoolean('ArchiveValues', false);
 
         $this->RegisterAttributeInteger('LastSeenAt', 0);
         $this->rltPanelCreate();
@@ -1082,6 +1083,7 @@ trait RLT_HubTrait
                 'items'    => array_merge([['type' => 'Label', 'name' => 'ConnectionStatusLine', 'caption' => $this->rltStatusLine()]], $this->rltConnectionItems(), [
                     ...$this->rltAddressBaseItems($device, (string)$this->ReadPropertyString('AddressBase')),
                     ['type' => 'NumberSpinner', 'name' => 'PollInterval', 'caption' => 'Abfragetakt', 'minimum' => 5, 'maximum' => 3600, 'suffix' => ' s'],
+                    ['type' => 'CheckBox', 'name' => 'ArchiveValues', 'caption' => 'Messwerte im Archiv aufzeichnen (Temperaturen, Wirkungsgrad, Filterlaufzeit …)'],
                     ['type' => 'Button', 'caption' => '🔎  Verbindung jetzt testen', 'onClick' => 'echo ' . static::PREFIX . '_TestConnection($id);'],
                 ]),
             ],
@@ -1303,7 +1305,7 @@ trait RLT_HubTrait
                 return;
         }
         $vid = $this->VarID($ident);
-        if ($archive && $vid) {
+        if ($archive && $vid && (bool)$this->ReadPropertyBoolean('ArchiveValues')) {
             $archiveIDs = IPS_GetInstanceListByModuleID('{43192F0B-135B-4CE7-A0A7-1475603F3060}');
             if (count($archiveIDs) > 0) {
                 AC_SetLoggingStatus($archiveIDs[0], $vid, true);

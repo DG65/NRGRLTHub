@@ -121,7 +121,8 @@ class IPSModule
     public function RegisterVariableInteger($i, $n, $p = '', $pos = 0) { $this->reg($i, $n, $p, 1); }
     public function RegisterVariableBoolean($i, $n, $p = '', $pos = 0) { $this->reg($i, $n, $p, 0); }
 }
-function AC_SetLoggingStatus() {}
+function AC_SetLoggingStatus($arch, $vid, $on) { $GLOBALS['RLT_AC'][] = [$arch, $vid, $on]; }
+$GLOBALS['RLT_AC'] = [];
 function AC_SetAggregationType() {}
 
 require_once dirname(__DIR__) . '/RLTHub/module.php';
@@ -932,6 +933,21 @@ check('jeder Treiber hat Klasse, Transport und Hinweis', (function () {
     }
     return true;
 })());
+
+echo "14) Archiv: nur auf ausdrücklichen Wunsch, nie von selbst (SUITE.md 9k, Prüfung vor Stable 27.10.2026)\n";
+$GLOBALS['RLT_INSTANCES'][4999] = ['module' => '{43192F0B-135B-4CE7-A0A7-1475603F3060}'];
+$GLOBALS['RLT_AC'] = [];
+$ar = new TestHub(4001); $ar->Create(); $ar->props['Host'] = '192.0.2.1'; $ar->ApplyChanges(); $ar->ApplyChanges();
+check('Archiv: Standard der Option ist AUS und es wird nichts eingeschaltet', $ar->ReadPropertyBoolean('ArchiveValues') === false && count($GLOBALS['RLT_AC']) === 0, json_encode($GLOBALS['RLT_AC']));
+$ar->props['ArchiveValues'] = true; $ar->ApplyChanges();
+check('Archiv: mit gesetztem Haken wird die Aufzeichnung der Messwerte eingeschaltet', count($GLOBALS['RLT_AC']) > 0 && $GLOBALS['RLT_AC'][0][2] === true, json_encode($GLOBALS['RLT_AC']));
+$ar->props['ArchiveValues'] = false; $before = count($GLOBALS['RLT_AC']); $ar->ApplyChanges();
+check('Archiv: ohne Haken schaltet das Modul nichts ein und nie etwas aus', count($GLOBALS['RLT_AC']) === $before);
+$arEls = walkForm(json_decode($ar->GetConfigurationForm(), true)['elements']);
+$arBox = array_values(array_filter($arEls, fn($e) => ($e['name'] ?? '') === 'ArchiveValues'));
+check('Archiv: Formular zeigt die Option als Haken (CheckBox)', count($arBox) === 1 && $arBox[0]['type'] === 'CheckBox');
+$arGw = new TestGw(4002); $arGw->Create();
+check('Archiv: auch RLTHubGateway bietet die Option an (Standard aus)', $arGw->ReadPropertyBoolean('ArchiveValues') === false && count(array_filter(walkForm(json_decode($arGw->GetConfigurationForm(), true)['elements']), fn($e) => ($e['name'] ?? '') === 'ArchiveValues')) === 1);
 
 echo "\n" . ($fails === 0 ? "ALLE PRÜFUNGEN BESTANDEN\n" : "$fails PRÜFUNG(EN) FEHLGESCHLAGEN\n");
 exit($fails === 0 ? 0 : 1);
