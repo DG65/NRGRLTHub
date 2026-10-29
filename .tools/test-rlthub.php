@@ -949,5 +949,46 @@ check('Archiv: Formular zeigt die Option als Haken (CheckBox)', count($arBox) ==
 $arGw = new TestGw(4002); $arGw->Create();
 check('Archiv: auch RLTHubGateway bietet die Option an (Standard aus)', $arGw->ReadPropertyBoolean('ArchiveValues') === false && count(array_filter(walkForm(json_decode($arGw->GetConfigurationForm(), true)['elements']), fn($e) => ($e['name'] ?? '') === 'ArchiveValues')) === 1);
 
+echo "15) Formular: Aufbau in RLTHubDiscovery (SUITE.md 3a, Dietmar 29.10.2026)\n";
+$fl = function (RLTHubDiscovery $m): array { return json_decode($m->GetConfigurationForm(), true)['elements']; };
+$fachCaps = fn(array $els) => array_values(array_map(fn($e) => $e['caption'], array_filter($els, fn($e) => ($e['type'] ?? '') === 'ExpansionPanel' && preg_match('/^(🔎 Suchbereich|📋 Fundliste|🔌 RS485)/u', $e['caption']))));
+$flo = new RLTHubDiscovery(4101); $flo->Create();
+$els = $fl($flo);
+check('Aufbau: Standardreihenfolge Suchbereich, Fundliste, RS485; Standard-Zustände unverändert', $fachCaps($els)[0] === '🔎 Suchbereich' && $fachCaps($els)[1] === '📋 Fundliste' && strpos($fachCaps($els)[2], '🔌 RS485') === 0);
+$caps = array_map(fn($e) => $e['caption'] ?? '', $els);
+$iAufbau = null; $iForum = null; $iFach3 = null;
+foreach ($els as $i => $e) {
+    if (strpos($e['caption'] ?? '', '🪟') === 0) { $iAufbau = $i; }
+    if (($e['name'] ?? '') === 'ForumHintPanel') { $iForum = $i; }
+    if (strpos($e['caption'] ?? '', '🔌 RS485') === 0) { $iFach3 = $i; }
+}
+check('Aufbau: Panel sitzt nach den Fachpanels und vor dem Forum-Hinweis, eingeklappt', $iAufbau !== null && $iAufbau > $iFach3 && $iAufbau < $iForum && $els[$iAufbau]['expanded'] === false);
+$lp = array_values(array_filter(walkForm($els), fn($e) => ($e['name'] ?? '') === 'FormLayout'))[0] ?? null;
+check('Aufbau: Liste FormLayout mit unsichtbarer Schlüsselspalte (save:true) und drei Zeilen', $lp !== null && count($lp['values']) === 3 && (function ($cols) { foreach ($cols as $c) { if ($c['name'] === 'Key') { return $c['visible'] === false && $c['save'] === true; } } return false; })($lp['columns']));
+check('Aufbau: Property FormLayout hat den Standard []', $flo->ReadPropertyString('FormLayout') === '[]');
+$flo->props['FormLayout'] = json_encode([['Key' => 'rs485', 'Opened' => true, 'Closed' => false, 'Hidden' => false, 'Pos' => 1], ['Key' => 'suche', 'Closed' => true, 'Pos' => 2]]);
+$els = $fl($flo); $fc = $fachCaps($els);
+check('Aufbau: Position bestimmt die Reihenfolge (RS485 zuerst), Fundliste ohne Eintrag folgt hinten nach Standardposition', strpos($fc[0], '🔌 RS485') === 0 && $fc[1] === '🔎 Suchbereich');
+$by = []; foreach ($els as $e) { if (isset($e['caption'])) { $by[$e['caption']] = $e; } }
+check('Aufbau: Aufgeklappt öffnet das sonst eingeklappte RS485-Panel, Zugeklappt schließt den Suchbereich', $by[$fc[0]]['expanded'] === true && $by['🔎 Suchbereich']['expanded'] === false);
+$flo->props['FormLayout'] = json_encode([['Key' => 'fundliste', 'Opened' => true, 'Closed' => true, 'Hidden' => true, 'Pos' => 2]]);
+$els = $fl($flo);
+$hidden = array_values(array_filter($els, fn($e) => strpos($e['caption'] ?? '', '📋 Fundliste') === 0));
+check('Aufbau: Ausgeblendet gewinnt gegen Zugeklappt und Aufgeklappt und ist visible:false, das Panel samt Configurator bleibt im Formular', count($hidden) === 1 && $hidden[0]['visible'] === false && count(array_filter(walkForm($hidden), fn($e) => ($e['type'] ?? '') === 'Configurator')) === 1);
+check('Aufbau: Caption und Hinweiszeile nennen die ausgeblendeten Bereiche', strpos(json_encode($els, JSON_UNESCAPED_UNICODE), 'Formular: Aufbau (1 ausgeblendet)') !== false && strpos(json_encode($els, JSON_UNESCAPED_UNICODE), 'Ausgeblendet: Fundliste') !== false);
+$flo->props['FormLayout'] = json_encode([['Key' => 'gibtsnicht', 'Hidden' => true, 'Pos' => 1], 'kaputt', ['Pos' => 5]]);
+$els = $fl($flo); $fc = $fachCaps($els);
+check('Aufbau: unbekannte oder kaputte Einträge fallen auf Standard zurück, nichts verschwindet', count($fc) === 3 && $fc[0] === '🔎 Suchbereich' && count(array_filter($els, fn($e) => ($e['visible'] ?? true) === false)) === 0);
+$flo->props['FormLayout'] = 'kein json';
+check('Aufbau: kaputtes JSON in der Property wirft nichts und ergibt den Standard', count($fachCaps($fl($flo))) === 3);
+$flo->formUpdates = [];
+$resetText = $flo->ResetFormLayout();
+$upd = array_values(array_filter($flo->formUpdates, fn($u) => $u[0] === 'FormLayout' && $u[1] === 'values'));
+$resetRows = isset($upd[0]) ? json_decode($upd[0][2], true) : [];
+check('Aufbau: Zurücksetzen schreibt per UpdateFormField den Standard, gibt Klartext zurück und speichert nichts', count($resetRows) === 3 && $resetRows[0]['Key'] === 'suche' && !$resetRows[0]['Hidden'] && strpos($resetText, 'Übernehmen') !== false && $flo->props['FormLayout'] === 'kein json');
+check('Aufbau: Neu-Panel kündigt es an, NEWS_VERSION = Bibliotheksversion', strpos(implode(' ', RLTHubDiscovery::NEWS), 'Formular-Aufbau') !== false && RLTHubDiscovery::NEWS_VERSION === json_decode(file_get_contents(dirname(__DIR__) . '/library.json'), true)['version']);
+$noA = new RLTHub(4102); $noA->Create(); $noB = new RLTHubGateway(4103); $noB->Create();
+check('Aufbau: RLTHub und RLTHubGateway haben nur ein Fachpanel und kein Aufbau-Panel', strpos($noA->GetConfigurationForm(), 'Formular: Aufbau') === false && strpos($noB->GetConfigurationForm(), 'Formular: Aufbau') === false);
+
 echo "\n" . ($fails === 0 ? "ALLE PRÜFUNGEN BESTANDEN\n" : "$fails PRÜFUNG(EN) FEHLGESCHLAGEN\n");
 exit($fails === 0 ? 0 : 1);

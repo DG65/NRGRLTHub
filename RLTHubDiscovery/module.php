@@ -25,7 +25,7 @@ class RLTHubDiscovery extends IPSModule
     public const MODULE_NAME = 'RLTHubDiscovery';
     public const MODULE_GUID = '{CC2C38CA-7675-4F27-B993-7B68187B8879}';
 
-    public const NEWS_VERSION = '0.4.0';
+    public const NEWS_VERSION = '0.4.4';
     public const FORUM_THREAD_URL = 'https://community.symcon.de/t/modul-nrg-stack-rlthub-lueftungsanlagen-rlt-kwl-per-modbus-anbinden-robatherm-truecontrol-proxon-fwt/144442';
     public const LICENSE_URL = 'https://github.com/DG65/NRGRLTHub/blob/beta/LICENSE';
     public const PURPOSE = [
@@ -34,6 +34,7 @@ class RLTHubDiscovery extends IPSModule
         'Das Modul selbst misst nichts — die eigentliche Datenerfassung übernimmt danach die neu angelegte RLTHub-Instanz. Geräte mit RS485/Modbus RTU sind im Netzwerk nicht auffindbar, dafür gibt es RLTHubGateway.',
     ];
     public const NEWS = [
+        '• 🪟 Neu: Formular-Aufbau selbst wählen. Im neuen Panel „Formular: Aufbau“ legst du je Bereich (Suchbereich, Fundliste, RS485) fest, ob er beim Öffnen aufgeklappt, zugeklappt oder ausgeblendet ist und an welcher Position er steht. Ausgeblendete Bereiche verlieren nichts.',
         '• 🆕 Die Suche erkennt jetzt auch Pichler-LG-Anlagen (ES2020-Steuerung) mit Modbus TCP und nennt den Typ (LG 350, 450 oder 740). Wie bisher: Ein Fund ist ein Vorschlag, den man prüfen sollte.',
         '• ⚠️ Noch an keiner Pichler-Anlage geprüft.',
     ];
@@ -50,6 +51,7 @@ class RLTHubDiscovery extends IPSModule
         $this->RegisterPropertyString('ScanEndIP', '');
         $this->RegisterPropertyInteger('ScanPort', 502);
         $this->RegisterPropertyInteger('ScanUnitId', 1);
+        $this->RegisterPropertyString('FormLayout', '[]');
         $this->RegisterAttributeString('ResultsJSON', '[]');
         // Status-Kopfzeile (SUITE.md „Einheitliche Verbund-Status-Kopfzeile").
         $this->RegisterAttributeInteger('LastScanTs', 0);
@@ -97,8 +99,8 @@ class RLTHubDiscovery extends IPSModule
             ],
         ];
 
-        $fach = [
-            [
+        $free = [
+            'suche' => [
                 'type'     => 'ExpansionPanel',
                 'caption'  => '🔎 Suchbereich',
                 'expanded' => true,
@@ -122,7 +124,7 @@ class RLTHubDiscovery extends IPSModule
                     ],
                 ]),
             ],
-            [
+            'fundliste' => [
                 'type'     => 'ExpansionPanel',
                 'caption'  => '📋 Fundliste',
                 'expanded' => true,
@@ -143,7 +145,7 @@ class RLTHubDiscovery extends IPSModule
                     ],
                 ],
             ],
-            [
+            'rs485' => [
                 'type'     => 'ExpansionPanel',
                 'caption'  => '🔌 RS485 / Modbus RTU (z. B. Proxon FWT)',
                 'expanded' => false,
@@ -154,11 +156,113 @@ class RLTHubDiscovery extends IPSModule
             ],
         ];
 
+        // Oben und unten stehen die Panels der Verbund-Konvention fest; dazwischen liegen die Fachpanels,
+        // deren Reihenfolge und Aufklapp-Zustand der Nutzer im Panel „Formular: Aufbau“ wählt (SUITE.md 3a).
+        $layout = $this->formLayout(array_keys($free));
+        $middle = [];
+        foreach ($layout as $key => $l) {
+            $panel = $free[$key];
+            if ($l['open'] === 'open') {
+                $panel['expanded'] = true;
+            } elseif ($l['open'] === 'closed') {
+                $panel['expanded'] = false;
+            } elseif ($l['open'] === 'hidden') {
+                // Nicht weglassen: Felder und Fundliste bleiben im Formular, gespeicherte Werte bleiben erhalten.
+                $panel['visible'] = false;
+            }
+            $middle[] = $panel;
+        }
+
         $form = [
-            'elements' => array_merge($this->rltPanelsTop(), [$doku], $fach, $this->rltPanelsBottom()),
+            'elements' => array_merge($this->rltPanelsTop(), [$doku], $middle, [$this->layoutPanel($layout, $free)], $this->rltPanelsBottom()),
             'actions'  => [],
         ];
         return json_encode($form);
+    }
+
+    private const LAYOUT_KEYS = ['suche', 'fundliste', 'rs485'];
+
+    /**
+     * Reihenfolge und Aufklapp-Zustand der Fachpanels aus der Einstellung „FormLayout“.
+     * Unbekannte oder fehlende Einträge fallen auf Standardreihenfolge und „Standard“ zurück.
+     *
+     * @param string[] $keys Schlüssel der Fachpanels in Standardreihenfolge
+     * @return array key => ['open' => 'std'|'open'|'closed'|'hidden', 'pos' => int, 'idx' => int], in anzuwendender Reihenfolge
+     */
+    private function formLayout(array $keys): array
+    {
+        $saved = json_decode((string)$this->ReadPropertyString('FormLayout'), true);
+        $by = [];
+        foreach (is_array($saved) ? $saved : [] as $row) {
+            if (is_array($row) && isset($row['Key'])) {
+                $by[(string)$row['Key']] = $row;
+            }
+        }
+        $out = [];
+        foreach ($keys as $i => $k) {
+            $r = $by[$k] ?? [];
+            // Vorrang bei Widerspruch: ausgeblendet vor zugeklappt vor aufgeklappt, kein Haken = Standard
+            $open = !empty($r['Hidden']) ? 'hidden' : (!empty($r['Closed']) ? 'closed' : (!empty($r['Opened']) ? 'open' : 'std'));
+            $out[$k] = [
+                'open' => $open,
+                'pos'  => isset($r['Pos']) ? max(1, min(99, (int)$r['Pos'])) : $i + 1,
+                'idx'  => $i,
+            ];
+        }
+        uasort($out, function ($a, $b) { return [$a['pos'], $a['idx']] <=> [$b['pos'], $b['idx']]; });
+        return $out;
+    }
+
+    /** Wählbarer Aufbau des Formulars: je Fachpanel Aufklapp-Zustand beim Öffnen und Position. */
+    private function layoutPanel(array $layout, array $free): array
+    {
+        $rows   = [];
+        $hidden = [];
+        foreach ($layout as $key => $l) {
+            $name = trim((string)preg_replace('/\s*\(.*$/u', '', (string)($free[$key]['caption'] ?? $key)));
+            $rows[] = ['Key' => $key, 'Panel' => $name, 'Opened' => $l['open'] === 'open', 'Closed' => $l['open'] === 'closed',
+                'Hidden' => $l['open'] === 'hidden', 'Pos' => $l['pos']];
+            if ($l['open'] === 'hidden') {
+                $hidden[] = trim((string)preg_replace('/^[^\p{L}\p{N}]+/u', '', $name));
+            }
+        }
+        $hiddenLine = $hidden
+            ? [['type' => 'Label', 'caption' => '🙈 Ausgeblendet: ' . implode(', ', $hidden) . ' — zum Wiederzeigen den Haken bei „Ausgeblendet“ entfernen. Ausgeblendete Bereiche arbeiten weiter, nur die Anzeige fehlt.']]
+            : [];
+        return [
+            'type' => 'ExpansionPanel', 'expanded' => false,
+            'caption' => '🪟  Formular: Aufbau' . ($hidden ? ' (' . count($hidden) . ' ausgeblendet)' : ''),
+            'items' => array_merge($hiddenLine, [
+                ['type' => 'Label', 'caption' => 'Hier legst du fest, welche Bereiche beim Öffnen des Formulars aufgeklappt sind und in welcher Reihenfolge sie stehen. Symcon merkt sich das Auf- und Zuklappen nicht selbst, deshalb gilt die Einstellung hier jedes Mal beim Öffnen. Sie wirkt nach „Übernehmen“ beim nächsten Öffnen des Formulars.'],
+                ['type' => 'Label', 'caption' => 'Kein Haken heißt „Standard“: wie das Modul es vorsieht. Die Position ist eine Zahl; bei gleicher Zahl bleibt die Standardreihenfolge. „Ausgeblendet“ nimmt einen Bereich aus der Anzeige, ohne dass er etwas verliert: seine Einstellungen bleiben erhalten und wirken weiter. Zum Wiederzeigen den Haken bei „Ausgeblendet“ entfernen oder „Auf Standard zurücksetzen“ klicken. Sind mehrere Haken gesetzt, gilt „Ausgeblendet“ vor „Zugeklappt“ vor „Aufgeklappt“. Die Bereiche oben (Zweck, Neu, Dokumentation) und unten (Forum, Über dieses Modul) bleiben, wo sie sind, und lassen sich nicht ausblenden.'],
+                [
+                    'type' => 'List', 'name' => 'FormLayout', 'caption' => 'Bereiche', 'rowCount' => count($rows), 'add' => false, 'delete' => false,
+                    'loadValuesFromConfiguration' => false,
+                    'values' => $rows,
+                    'columns' => [
+                        ['caption' => 'Bereich', 'name' => 'Panel', 'width' => 'auto', 'add' => ''],
+                        ['caption' => 'Schlüssel', 'name' => 'Key', 'width' => '0px', 'visible' => false, 'add' => '', 'save' => true],
+                        ['caption' => 'Aufgeklappt', 'name' => 'Opened', 'width' => '110px', 'add' => false, 'edit' => ['type' => 'CheckBox']],
+                        ['caption' => 'Zugeklappt', 'name' => 'Closed', 'width' => '110px', 'add' => false, 'edit' => ['type' => 'CheckBox']],
+                        ['caption' => '🙈 Ausgeblendet', 'name' => 'Hidden', 'width' => '130px', 'add' => false, 'edit' => ['type' => 'CheckBox']],
+                        ['caption' => 'Position', 'name' => 'Pos', 'width' => '100px', 'add' => 1, 'edit' => ['type' => 'NumberSpinner', 'minimum' => 1, 'maximum' => 99]],
+                    ],
+                ],
+                ['type' => 'Button', 'caption' => '↩️ Auf Standard zurücksetzen', 'onClick' => 'echo ' . static::PREFIX . '_ResetFormLayout($id);'],
+            ]),
+        ];
+    }
+
+    /** Setzt Aufklapp-Zustand und Reihenfolge der Fachpanels im offenen Formular auf den Standard (gilt nach „Übernehmen“). */
+    public function ResetFormLayout(): string
+    {
+        $captions = ['suche' => 'Suchbereich', 'fundliste' => 'Fundliste', 'rs485' => 'RS485 / Modbus RTU'];
+        $rows = [];
+        foreach (self::LAYOUT_KEYS as $i => $k) {
+            $rows[] = ['Key' => $k, 'Panel' => $captions[$k], 'Opened' => false, 'Closed' => false, 'Hidden' => false, 'Pos' => $i + 1];
+        }
+        $this->UpdateFormField('FormLayout', 'values', json_encode($rows, JSON_UNESCAPED_UNICODE));
+        return 'ℹ️ Auf Standard gesetzt. Zum Speichern unten „Übernehmen“ klicken.';
     }
 
     // Suchbereich nach der Verbund-Konvention „Wert kommt automatisch: Eingabefeld

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.4 (29.10.2026)
+
+- **Verbund-Konvention „Formular: Aufbau“ (SUITE.md 3a):** RLTHubDiscovery bekommt das Panel
+  „🪟 Formular: Aufbau“. Je Fachpanel (Suchbereich, Fundliste, RS485) wählt der Nutzer „Aufgeklappt“,
+  „Zugeklappt“ oder „🙈 Ausgeblendet“ und eine Position 1–99; kein Haken = Standard, bei Widerspruch gilt
+  ausgeblendet vor zugeklappt vor aufgeklappt. Ausgeblendet heißt `visible: false`, die Felder bleiben im
+  Formular. Unbekannte Schlüssel fallen auf Standard zurück, der Knopf „Auf Standard zurücksetzen“ gibt
+  Klartext zurück und speichert nichts selbst. RLTHub und RLTHubGateway haben nur ein Fachpanel und
+  brauchen das Panel nicht.
+
 ## 0.4.3 (27.10.2026)
 
 - **Store-Review (SUITE.md 9k, Prüfung vor Stable):** Das Modul schaltete die Archiv-Aufzeichnung der
