@@ -53,6 +53,8 @@ function IPS_GetInstance($id) { return ['ConnectionID' => $GLOBALS['RLT_INSTANCE
 function IPS_InstanceExists($id) { return isset($GLOBALS['RLT_INSTANCES'][$id]); }
 function IPS_GetProperty($id, $name) { return $GLOBALS['RLT_INSTANCES'][$id]['props'][$name] ?? null; }
 $GLOBALS['RLT_RUNLEVEL'] = KR_READY;
+$GLOBALS['RLT_LANG'] = 'de';
+$GLOBALS['RLT_DE'] = json_decode(file_get_contents(dirname(__DIR__) . '/libs/locale.json'), true)['translations']['de'];
 $GLOBALS['RLT_LOG'] = [];
 $GLOBALS['RLT_MODOBJ'] = [];
 function IPS_GetKernelRunlevel() { return $GLOBALS['RLT_RUNLEVEL']; }
@@ -98,6 +100,11 @@ class IPSModule
     public function SetStatus($s) { $this->status = $s; $this->statusSeen[$s] = true; }
     public function GetStatus() { return $this->status; }
     public function UpdateFormField($f, $k, $v) { $this->formUpdates[] = [$f, $k, $v]; }
+    public function Translate($text)
+    {
+        $GLOBALS['RLT_TR_CALLS'] = ($GLOBALS['RLT_TR_CALLS'] ?? 0) + 1;
+        return ($GLOBALS['RLT_LANG'] ?? 'de') === 'de' ? ($GLOBALS['RLT_DE'][$text] ?? $text) : $text;
+    }
     public function LogMessage($message, $level) { $GLOBALS['RLT_LOG'][] = [static::MODULE_NAME, $message, $level, $this->InstanceID]; }
     public function SendDebug($a, $b, $c) {}
     protected function SendDataToParent($json) { return $this->parentFn ? ($this->parentFn)($json) : false; }
@@ -128,6 +135,8 @@ function AC_SetAggregationType() {}
 require_once dirname(__DIR__) . '/RLTHub/module.php';
 require_once dirname(__DIR__) . '/RLTHubGateway/module.php';
 require_once dirname(__DIR__) . '/RLTHubDiscovery/module.php';
+// Symcon läuft im Prüfstand auf Deutsch (Standard); der englische Fall wird in Block 16 gesondert geprüft.
+RLT_Text::setTranslator(function (string $t): string { return $GLOBALS['RLT_DE'][$t] ?? $t; });
 
 $fails = 0;
 function check($label, $cond, $detail = '')
@@ -328,10 +337,10 @@ check("echte FWT-Messwerte: Zyklus ok", (new RLT_ProxonFwtDriver())->readValues(
 check("echte FWT-Messwerte: 14,2 / 18,25 / 24,2 °C", abs($hr->vars['outsideTemp'] - 14.2) < 1e-9 && abs($hr->vars['supplyTemp'] - 18.25) < 1e-9 && abs($hr->vars['extractTemp'] - 24.2) < 1e-9, json_encode([$hr->vars['outsideTemp'], $hr->vars['supplyTemp'], $hr->vars['extractTemp']]));
 check("echte FWT-Messwerte: Wirkungsgrad (18,25-14,2)/(24,2-14,2) = 40,5 %", abs($hr->vars['heatRecoveryEfficiency'] - 40.5) < 1e-6, (string)$hr->vars['heatRecoveryEfficiency']);
 check("echte FWT-Messwerte: Filterstunden 1069, keine Störung, Betriebsart an", $hr->vars['filterRuntimeHours'] === 1069.0 && $hr->vars['faultSummary'] === false && $hr->vars['systemSwitch'] === true);
-$conf = RLT_Drivers::DRIVERS['proxon_fwt']['confidence'];
-$notes = implode(' ', (new RLT_ProxonFwtDriver())->getNotes());
+$conf = RLT_Text::t(RLT_Drivers::DRIVERS['proxon_fwt']['confidence']);
+$notes = implode(' ', array_map([RLT_Text::class, 't'], (new RLT_ProxonFwtDriver())->getNotes()));
 check("Vertrauensangabe FWT nennt die echte Prüfung UND die offenen Punkte (Minusgrade, Störungscodes)", strpos($conf, '21.09.2026') !== false && strpos($conf, 'unter 0 °C') !== false && strpos($conf, 'Störungscodes') !== false && strpos($notes, 'Annahme') !== false);
-check("Robatherm bleibt ehrlich als ungeprüft gekennzeichnet", strpos(RLT_Drivers::DRIVERS['robatherm_truecontrol']['confidence'], 'noch nicht an Hardware verifiziert') !== false);
+check("Robatherm bleibt ehrlich als ungeprüft gekennzeichnet", strpos(RLT_Text::t(RLT_Drivers::DRIVERS['robatherm_truecontrol']['confidence']), 'noch nicht an Hardware verifiziert') !== false);
 
 echo "5) RLTHub (TCP) gegen den IPSModule-Nachbau: Variablen, Zyklus, Vertrag, Formular\n";
 class TestHub extends RLTHub
@@ -830,7 +839,7 @@ $pf = new FakeModbus(); $pf->input[29] = [0];
 check("Pichler: Temperaturblock fehlt -> Zyklus meldet Fehler", $pd->readValues($pf, new FakeHub(false)) === false);
 $pv = array_column($pd->getBaseVars(), 0);
 check("Pichler: kein filterRuntimeHours (Restzeit ist keine Betriebsstundenzahl), kein co2 (Sensor nicht erkennbar)", !in_array('filterRuntimeHours', $pv, true) && !in_array('co2', $pv, true) && in_array('filterHoursRemaining', $pv, true) && in_array('filterAlarm', $pv, true));
-check("Pichler: Hinweistexte nennen Herkunft, Adress-Basis-Vorbehalt, Filter- und Volumenstrom-Zuordnung", (function () use ($pd) { $n = implode(' ', $pd->getNotes()); return strpos($n, 'noch an keiner Anlage geprüft') !== false && strpos($n, 'Adress-Basis') !== false && strpos($n, 'Restzeit') !== false && strpos($n, 'm³/h') !== false && strpos($n, 'CO2') !== false; })());
+check("Pichler: Hinweistexte nennen Herkunft, Adress-Basis-Vorbehalt, Filter- und Volumenstrom-Zuordnung", (function () use ($pd) { $n = implode(' ', array_map([RLT_Text::class, 't'], $pd->getNotes())); return strpos($n, 'noch an keiner Anlage geprüft') !== false && strpos($n, 'Adress-Basis') !== false && strpos($n, 'Restzeit') !== false && strpos($n, 'm³/h') !== false && strpos($n, 'CO2') !== false; })());
 $pp = new FakeModbus(); $pp->input[25] = [0]; $pp->input[30] = [1123, 1200, 1215, 1201];
 check("Pichler-probe: Modellregister + plausible Temperaturen -> Fund mit Typ „LG 350“", strpos((string)$pd->probe($pp), 'LG 350: Außenluft 12,3') === 0 || strpos((string)$pd->probe($pp), 'LG 350: Außenluft 12.3') === 0, (string)$pd->probe($pp));
 $pq = new FakeModbus(); $pq->input[25] = [7]; $pq->input[30] = [1123, 1200, 1215, 1201];
@@ -986,9 +995,98 @@ $resetText = $flo->ResetFormLayout();
 $upd = array_values(array_filter($flo->formUpdates, fn($u) => $u[0] === 'FormLayout' && $u[1] === 'values'));
 $resetRows = isset($upd[0]) ? json_decode($upd[0][2], true) : [];
 check('Aufbau: Zurücksetzen schreibt per UpdateFormField den Standard, gibt Klartext zurück und speichert nichts', count($resetRows) === 3 && $resetRows[0]['Key'] === 'suche' && !$resetRows[0]['Hidden'] && strpos($resetText, 'Übernehmen') !== false && $flo->props['FormLayout'] === 'kein json');
-check('Aufbau: Neu-Panel kündigt es an, NEWS_VERSION = Bibliotheksversion', strpos(implode(' ', RLTHubDiscovery::NEWS), 'Formular-Aufbau') !== false && RLTHubDiscovery::NEWS_VERSION === json_decode(file_get_contents(dirname(__DIR__) . '/library.json'), true)['version']);
+check('Aufbau: Neu-Panel kündigt es an, NEWS_VERSION = Bibliotheksversion', strpos(implode(' ', array_map([RLT_Text::class, 't'], RLTHubDiscovery::NEWS)), 'Formular-Aufbau') !== false && RLTHubDiscovery::NEWS_VERSION === json_decode(file_get_contents(dirname(__DIR__) . '/library.json'), true)['version']);
 $noA = new RLTHub(4102); $noA->Create(); $noB = new RLTHubGateway(4103); $noB->Create();
 check('Aufbau: RLTHub und RLTHubGateway haben nur ein Fachpanel und kein Aufbau-Panel', strpos($noA->GetConfigurationForm(), 'Formular: Aufbau') === false && strpos($noB->GetConfigurationForm(), 'Formular: Aufbau') === false);
+
+echo "16) Zweisprachigkeit DE/EN (SUITE.md Konvention 9)\n";
+$srcFiles = ['libs/RLTCore.php', 'libs/RLTPanels.php', 'RLTHub/module.php', 'RLTHubGateway/module.php', 'RLTHubDiscovery/module.php'];
+$locale = json_decode(file_get_contents(dirname(__DIR__) . '/libs/locale.json'), true)['translations']['de'];
+$used = [];
+foreach ($srcFiles as $f) {
+    $tk = token_get_all(file_get_contents(dirname(__DIR__) . '/' . $f));
+    for ($i = 0, $n = count($tk); $i < $n - 3; $i++) {
+        if (is_array($tk[$i]) && $tk[$i][1] === 'RLT_Text' && $tk[$i + 1][1] === '::' && $tk[$i + 2][1] === 't' && $tk[$i + 3] === '(') {
+            for ($j = $i + 4; $j < $n && is_array($tk[$j]) && $tk[$j][0] === T_WHITESPACE; $j++) {}
+            if ($tk[$j][0] === T_CONSTANT_ENCAPSED_STRING) { $used[eval('return ' . $tk[$j][1] . ';')] = $f; }
+        }
+    }
+}
+// Texte, die als Daten (Treiber, NEWS, PURPOSE) statt als Literal im t()-Aufruf stehen
+foreach (RLT_Drivers::DRIVERS as $key => $def) {
+    $used[$def['caption']] = "DRIVERS[$key]"; $used[$def['confidence']] = "DRIVERS[$key]";
+    $drv = RLT_Drivers::create($key);
+    foreach ($drv->getBaseVars() as $v) { $used[$v[1]] = "$key/getBaseVars"; }
+    foreach ($drv->getNotes() as $note) { $used[$note] = "$key/getNotes"; }
+}
+$used['Last updated'] = 'rltApply';
+foreach (['RLTHub', 'RLTHubGateway', 'RLTHubDiscovery'] as $cls) {
+    foreach (constant("$cls::PURPOSE") as $t) { $used[$t] = "$cls::PURPOSE"; }
+    foreach (constant("$cls::NEWS") as $t) { $used[$t] = "$cls::NEWS"; }
+}
+$missing = array_values(array_diff(array_keys($used), array_keys($locale)));
+check('Zweisprachig: jeder Text im Code (t()-Aufrufe, Treiberdaten, Neu/Zweck) steht in locale.json', count($missing) === 0, json_encode(array_slice($missing, 0, 3), JSON_UNESCAPED_UNICODE) . ' (' . count($missing) . ')');
+$orphans = array_values(array_diff(array_keys($locale), array_keys($used), ['.', 'Y-m-d H:i:s', 'yes', 'no']));
+check('Zweisprachig: keine verwaisten Einträge in locale.json', count($orphans) === 0, json_encode(array_slice($orphans, 0, 3), JSON_UNESCAPED_UNICODE) . ' (' . count($orphans) . ')');
+$badPh = [];
+foreach ($locale as $en => $de) {
+    preg_match_all('/%(?:\d+\$)?[sd]/', $en, $a); preg_match_all('/%(?:\d+\$)?[sd]/', $de, $b);
+    if ($a[0] !== $b[0]) { $badPh[] = $en; }
+}
+check('Zweisprachig: Platzhalter (%s/%d) stehen in Englisch und Deutsch gleich und in gleicher Reihenfolge', count($badPh) === 0, json_encode(array_slice($badPh, 0, 2), JSON_UNESCAPED_UNICODE));
+$emptyDe = array_filter($locale, fn($d) => trim($d) === '');
+check('Zweisprachig: keine leere deutsche Fassung, kein englischer Text ohne Übersetzung (Quelle = Ziel nur bei Eigennamen)', count($emptyDe) === 0 && count(array_filter($locale, fn($d, $e) => $d === $e && preg_match('/[a-z]{4,} [a-z]{3,}/', $e), ARRAY_FILTER_USE_BOTH)) === 0);
+$mods = array_map(fn($m) => json_decode(file_get_contents(dirname(__DIR__) . "/$m/locale.json"), true)['translations']['de'], ['RLTHub', 'RLTHubGateway', 'RLTHubDiscovery']);
+check('Zweisprachig: die locale.json der drei Module ist eine Kopie von libs/locale.json (php .tools/locale-bauen.php)', $mods[0] === $locale && $mods[1] === $locale && $mods[2] === $locale);
+
+// Englisch: Formulare aller Module in mehreren Zuständen erzeugen und auf deutsche Reste prüfen
+$GLOBALS['RLT_LANG'] = 'en';
+$enHub = new TestHub(4201); $enHub->Create(); $enHub->ApplyChanges(); $enHub->mb = new FakeModbus();
+$enHub2 = new TestHub(4202); $enHub2->Create(); $enHub2->props['Host'] = '192.0.2.77'; $enHub2->props['Device'] = 'pichler_lg'; $enHub2->ApplyChanges(); $enHub2->mb = new FakeModbus();
+$enGw = new TestGw(4203); $enGw->Create(); $enGw->ApplyChanges();
+$enDisc = new RLTHubDiscovery(4204); $enDisc->Create();
+$enDisc2 = new RLTHubDiscovery(4205); $enDisc2->Create(); $enDisc2->props['FormLayout'] = json_encode([['Key' => 'fundliste', 'Hidden' => true, 'Pos' => 1]]);
+$enTexts = [
+    $enHub->GetConfigurationForm(), $enHub2->GetConfigurationForm(), $enGw->GetConfigurationForm(),
+    $enDisc->GetConfigurationForm(), $enDisc2->GetConfigurationForm(),
+    $enHub2->TestConnection(), $enGw->TestConnection(), $enHub->OnChangeHost('') ?? '', $enDisc->Discover('', '', 502, 1),
+];
+foreach ($enHub->formUpdates as $u) { $enTexts[] = (string)$u[2]; }
+foreach ([$enHub, $enHub2, $enGw] as $m) { $m->OnChangeDevice('robatherm_truecontrol', 'auto'); foreach ($m->formUpdates as $u) { $enTexts[] = (string)$u[2]; } }
+$enTexts[] = $enDisc->ResetFormLayout();
+foreach (RLT_Drivers::DRIVERS as $k => $d) { $enTexts[] = RLT_Text::t($d['caption']) . RLT_Text::t($d['confidence']) . implode(' ', array_map([RLT_Text::class, 't'], RLT_Drivers::create($k)->getNotes())); }
+$all = json_encode($enTexts, JSON_UNESCAPED_UNICODE);
+$germanRe = '/[äöüÄÖÜß]|\b(und|oder|nicht|wird|werden|eine|einen|der|die|das|mit|für|noch|keine|keinen|Anlage|Anlagen|Verbindung|Gerät|Adresse|prüfen|Außenluft|Zuluft|Abluft|Störung|Lüftung\w*|Hinweis|Suche|Bereich\w*|Schaltfläche|gefunden|Dokumentation|Wozu|Neu in)\b/u';
+preg_match_all($germanRe, $all, $mm);
+check('Englisches Formular (alle drei Module, mehrere Zustände): keine deutschen Reste', count($mm[0]) === 0, json_encode(array_unique($mm[0]), JSON_UNESCAPED_UNICODE));
+check('Englisch: der englische Quelltext erscheint (Beschriftungen, Verbindungstest, Status)', strpos($all, 'Communication active') !== false && strpos($all, 'Test connection now') !== false && strpos($all, 'Address base of the register list') !== false && strpos($all, 'No IP address entered yet') !== false && strpos($all, 'Kommunikation') === false);
+$germanLeft = [];
+foreach ($srcFiles as $f) {
+    $tk = token_get_all(file_get_contents(dirname(__DIR__) . '/' . $f));
+    for ($i = 0, $n = count($tk); $i < $n; $i++) {
+        if (!is_array($tk[$i]) || $tk[$i][0] !== T_CONSTANT_ENCAPSED_STRING || strlen($tk[$i][1]) < 4) { continue; }
+        if (!preg_match('/[äöüÄÖÜß]|\b(und|oder|nicht|wird|werden|eine|keine|noch|mit|für)\b/u', $tk[$i][1])) { continue; }
+        $j = $i - 1; while ($j >= 0 && is_array($tk[$j]) && $tk[$j][0] === T_WHITESPACE) { $j--; }
+        $k = $j - 1; while ($k >= 0 && is_array($tk[$k]) && $tk[$k][0] === T_WHITESPACE) { $k--; }
+        $inT = $tk[$j] === '(' && $k >= 0 && is_array($tk[$k]) && $tk[$k][1] === 't';
+        if (!$inT) { $germanLeft[] = $f . ':' . $tk[$i][2]; }
+    }
+}
+check('Zweisprachig: kein deutscher Text mehr im Code (Quelltexte sind englisch, Deutsch steht nur in locale.json)', count($germanLeft) === 0, json_encode($germanLeft));
+// Dezimalzeichen und Zeitformat je Sprache
+check('Englisch: Dezimalpunkt und ISO-Datum', RLT_Text::number(23.5) === '23.5' && preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', RLT_Text::time(86400 * 365)) === 1);
+$GLOBALS['RLT_LANG'] = 'de';
+$deHub = new TestHub(4206);
+check('Deutsch: Dezimalkomma und TT.MM.JJJJ', RLT_Text::number(23.5) === '23,5' && preg_match('/^\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}:\d{2}$/', RLT_Text::time(86400 * 365)) === 1);
+// Stolperstein 24: nach dem ersten Mal kein Translate()-Aufruf mehr (Zyklus, Vertrag, Formular)
+$wh = new TestHub(4207); $wh->Create(); $wh->props['Host'] = '192.0.2.5'; $wh->ApplyChanges(); $wh->mb = new FakeModbus();
+$wh->GetConfigurationForm(); $wh->ReadValues(); $wh->GetFunctions(); $wh->TestConnection();
+$GLOBALS['RLT_TR_CALLS'] = 0;
+$wh->GetConfigurationForm(); $wh->ReadValues(); $wh->GetFunctions(); $wh->TestConnection();
+check('Stolperstein 24: Formular, Lesezyklus, Vertragsabfrage und Verbindungstest fragen Symcon nach dem ersten Mal nicht mehr nach Übersetzungen', $GLOBALS['RLT_TR_CALLS'] === 0, (string)$GLOBALS['RLT_TR_CALLS']);
+// Kennungen unverändert (Verbundvertrag, Instanzen verlieren nichts)
+$fnKeys = array_keys($wh->GetFunctions()[0]);
+check('Kennungen unverändert: Vertragsschlüssel Type=>ventilation 1.0 und Idents der Variablen', $fnKeys === ['contractVersion', 'instanceID', 'Caption', 'Measured', 'unit', 'reachable', 'outsideTempID', 'supplyTempID', 'extractTempID', 'co2ID', 'heatRecoveryEfficiencyID', 'filterRuntimeHoursID', 'fan1FlowID', 'fan2FlowID', 'faultSummaryID', 'lastSeenAt', 'pollInterval'] && $wh->hasVar('outsideTemp') && $wh->hasVar('heatRecoveryEfficiency') && $wh->hasVar('lastSeenAt'));
 
 echo "\n" . ($fails === 0 ? "ALLE PRÜFUNGEN BESTANDEN\n" : "$fails PRÜFUNG(EN) FEHLGESCHLAGEN\n");
 exit($fails === 0 ? 0 : 1);

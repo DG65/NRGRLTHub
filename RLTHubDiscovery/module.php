@@ -25,24 +25,33 @@ class RLTHubDiscovery extends IPSModule
     public const MODULE_NAME = 'RLTHubDiscovery';
     public const MODULE_GUID = '{CC2C38CA-7675-4F27-B993-7B68187B8879}';
 
-    public const NEWS_VERSION = '0.4.4';
+    public const NEWS_VERSION = '0.5.0';
     public const FORUM_THREAD_URL = 'https://community.symcon.de/t/modul-nrg-stack-rlthub-lueftungsanlagen-rlt-kwl-per-modbus-anbinden-robatherm-truecontrol-proxon-fwt/144442';
     public const LICENSE_URL = 'https://github.com/DG65/NRGRLTHub/blob/beta/LICENSE';
     public const PURPOSE = [
-        'Durchsucht dein lokales Netz nach Lüftungsanlagen mit Modbus TCP und legt auf Klick eine vorausgefüllte RLTHub-Instanz an — IP-Adresse, Port, Unit-ID und Gerätetyp müssen nicht von Hand eingetragen werden.',
-        'Der Nutzen: bei mehreren Anlagen ein paar Klicks statt manueller Konfiguration jeder einzelnen Instanz. Ein Fund heißt nur, dass an den Registern des jeweiligen Gerätetyps plausible Temperaturen stehen — bitte jeden Vorschlag prüfen.',
-        'Das Modul selbst misst nichts — die eigentliche Datenerfassung übernimmt danach die neu angelegte RLTHub-Instanz. Geräte mit RS485/Modbus RTU sind im Netzwerk nicht auffindbar, dafür gibt es RLTHubGateway.',
+        'Searches your local network for ventilation systems with Modbus TCP and creates a prefilled RLTHub instance on click — IP address, port, unit ID and device type do not have to be entered by hand.',
+        'The benefit: with several plants a few clicks instead of configuring each instance manually. A find only means that plausible temperatures are present at the registers of the respective device type — please check every suggestion.',
+        'The module itself measures nothing — the actual data collection is done afterwards by the newly created RLTHub instance. Devices with RS485/Modbus RTU cannot be found on the network; RLTHubGateway exists for those.',
     ];
     public const NEWS = [
-        '• 🪟 Neu: Formular-Aufbau selbst wählen. Im neuen Panel „Formular: Aufbau“ legst du je Bereich (Suchbereich, Fundliste, RS485) fest, ob er beim Öffnen aufgeklappt, zugeklappt oder ausgeblendet ist und an welcher Position er steht. Ausgeblendete Bereiche verlieren nichts.',
-        '• 🆕 Die Suche erkennt jetzt auch Pichler-LG-Anlagen (ES2020-Steuerung) mit Modbus TCP und nennt den Typ (LG 350, 450 oder 740). Wie bisher: Ein Fund ist ein Vorschlag, den man prüfen sollte.',
-        '• ⚠️ Noch an keiner Pichler-Anlage geprüft.',
+        '• 🌐 New: bilingual (German/English). The form, messages and notes now follow the Symcon language. Identifiers and settings are unchanged.',
+        '• 🪟 New: choose the form layout yourself — in the panel "Form: layout", decide for each section (search range, results list, RS485) whether it is expanded, collapsed or hidden when the form opens, and where it appears. Hidden sections keep working.',
+        '• 🆕 The search now also detects Pichler LG plants (ES2020 controller) with Modbus TCP and names the type (LG 350, 450 or 740). As before: a find is a suggestion that you should check.',
+        '• ⚠️ Not yet checked on any Pichler plant.',
     ];
 
     private const HUB_GUID            = '{19C33A5B-8C10-45F5-9A33-9928D9005B69}';
     private const GATEWAY_HUB_GUID    = '{1AE15A54-8ECC-4599-961B-447BD8671715}';
     private const MODBUS_GATEWAY_GUID = '{A5F663AB-C400-4FE5-B207-4D67CC030564}';
     private const MAX_HOSTS           = 1024;
+
+    public function __construct($InstanceID)
+    {
+        parent::__construct($InstanceID);
+        RLT_Text::setTranslator(RLT_Text::withMemo(function (string $text): string {
+            return $this->Translate($text);
+        }));
+    }
 
     public function Create()
     {
@@ -70,11 +79,11 @@ class RLTHubDiscovery extends IPSModule
     {
         $ts = (int)$this->ReadAttributeInteger('LastScanTs');
         if ($ts === 0) {
-            return 'ℹ️ Noch nicht gesucht — Schaltfläche oben drücken.';
+            return RLT_Text::t('ℹ️ Not searched yet — press the button above.');
         }
         $rows = json_decode((string)$this->ReadAttributeString('ResultsJSON'), true);
         $count = is_array($rows) ? count($rows) : 0;
-        return sprintf('%s %d Lüftungsanlage(n) gefunden (zuletzt %s Uhr).', $count > 0 ? '✅' : '⚠️', $count, date('H:i:s', $ts));
+        return RLT_Text::t('%s %d ventilation system(s) found (last at %s).', $count > 0 ? '✅' : '⚠️', $count, RLT_Text::clock($ts));
     }
 
     public function GetConfigurationForm()
@@ -89,57 +98,57 @@ class RLTHubDiscovery extends IPSModule
 
         $doku = [
             'type'     => 'ExpansionPanel',
-            'caption'  => '📖 Dokumentation & Hilfe',
+            'caption'  => RLT_Text::t('📖 Documentation & help'),
             'expanded' => false,
             'items'    => [
-                ['type' => 'Label', 'caption' => static::MODULE_NAME . ' Version ' . $version . ' — noch an keiner echten Anlage verifiziert.'],
-                ['type' => 'Label', 'caption' => 'Ablauf: Suchbereich prüfen, „Netzwerk durchsuchen" drücken, in der Fundliste die gewünschte Anlage markieren und „Erstellen" wählen. Die neue RLTHub-Instanz ist vorausgefüllt und muss nur noch geprüft und aktiv geschaltet werden.'],
-                ['type' => 'Label', 'caption' => 'Die Suche prüft, welche Adressen den Modbus-Port offen haben, und liest dort nur lesend die Register jedes unterstützten Gerätetyps. Ein Fund heißt: An diesen Registern stehen plausible Temperaturen. Steuerungen wie Robatherm TrueControl haben kein festes Erkennungsmerkmal — bitte jeden Vorschlag prüfen.'],
-                ['type' => 'Label', 'caption' => 'Ein Gerät, das überall 0 liefert, oder eines, das auf die Register mit einer Modbus-Fehlermeldung antwortet, gilt nicht als Fund.'],
+                ['type' => 'Label', 'caption' => RLT_Text::t('%s version %s — not yet verified on any real plant.', static::MODULE_NAME, $version)],
+                ['type' => 'Label', 'caption' => RLT_Text::t('Procedure: check the search range, press "Search network", select the desired plant in the results list and choose "Create". The new RLTHub instance is prefilled and only has to be checked and switched active.')],
+                ['type' => 'Label', 'caption' => RLT_Text::t('The search checks which addresses have the Modbus port open and reads the registers of every supported device type there, read-only. A find means: plausible temperatures are present at these registers. Controllers such as Robatherm TrueControl have no fixed identifying feature — please check every suggestion.')],
+                ['type' => 'Label', 'caption' => RLT_Text::t('A device that returns 0 everywhere, or one that answers the registers with a Modbus error, does not count as a find.')],
             ],
         ];
 
         $free = [
             'suche' => [
                 'type'     => 'ExpansionPanel',
-                'caption'  => '🔎 Suchbereich',
+                'caption'  => RLT_Text::t('🔎 Search range'),
                 'expanded' => true,
                 'items'    => array_merge($this->rangeItems($prefix), [
-                    ['type' => 'NumberSpinner', 'name' => 'ScanPort', 'caption' => 'TCP-Port', 'minimum' => 1, 'maximum' => 65535],
-                    ['type' => 'NumberSpinner', 'name' => 'ScanUnitId', 'caption' => 'Unit ID', 'minimum' => 1, 'maximum' => 247],
+                    ['type' => 'NumberSpinner', 'name' => 'ScanPort', 'caption' => RLT_Text::t('TCP port'), 'minimum' => 1, 'maximum' => 65535],
+                    ['type' => 'NumberSpinner', 'name' => 'ScanUnitId', 'caption' => RLT_Text::t('Unit ID'), 'minimum' => 1, 'maximum' => 247],
                     // Schaltfläche zuerst, direkt darunter die eine Kopfzeile (SUITE.md).
                     [
                         'type'    => 'Button',
-                        'caption' => '🔎  Netzwerk durchsuchen',
+                        'caption' => RLT_Text::t('🔎  Search network'),
                         'onClick' => 'echo RLTD_Discover($id, $ScanStartIP, $ScanEndIP, $ScanPort, $ScanUnitId);',
                     ],
                     ['type' => 'Label', 'name' => 'ScanResult', 'caption' => $this->ScanSummaryLine()],
                     [
                         'type'     => 'ExpansionPanel',
-                        'caption'  => 'Details der letzten Suche',
+                        'caption'  => RLT_Text::t('Details of the last search'),
                         'expanded' => false,
                         'items'    => [
-                            ['type' => 'Label', 'name' => 'ScanDetails', 'caption' => (string)$this->ReadAttributeString('ScanDetails') !== '' ? (string)$this->ReadAttributeString('ScanDetails') : 'Noch nicht gesucht.'],
+                            ['type' => 'Label', 'name' => 'ScanDetails', 'caption' => (string)$this->ReadAttributeString('ScanDetails') !== '' ? (string)$this->ReadAttributeString('ScanDetails') : RLT_Text::t('Not searched yet.')],
                         ],
                     ],
                 ]),
             ],
             'fundliste' => [
                 'type'     => 'ExpansionPanel',
-                'caption'  => '📋 Fundliste',
+                'caption'  => RLT_Text::t('📋 Results list'),
                 'expanded' => true,
                 'items'    => [
                     [
                         'type'     => 'Configurator',
                         'name'     => 'Configurator',
-                        'caption'  => 'Gefundene Lüftungsanlagen',
+                        'caption'  => RLT_Text::t('Ventilation systems found'),
                         'rowCount' => 6,
                         'delete'   => false,
                         'sort'     => ['column' => 'address', 'direction' => 'ascending'],
                         'columns'  => [
-                            ['caption' => 'Adresse', 'name' => 'address', 'width' => '150px'],
-                            ['caption' => 'Gerätetyp', 'name' => 'device', 'width' => '230px'],
-                            ['caption' => 'Fund', 'name' => 'detail', 'width' => 'auto'],
+                            ['caption' => RLT_Text::t('Address'), 'name' => 'address', 'width' => '150px'],
+                            ['caption' => RLT_Text::t('Device type'), 'name' => 'device', 'width' => '230px'],
+                            ['caption' => RLT_Text::t('Result'), 'name' => 'detail', 'width' => 'auto'],
                         ],
                         'values'   => $values,
                     ],
@@ -147,10 +156,10 @@ class RLTHubDiscovery extends IPSModule
             ],
             'rs485' => [
                 'type'     => 'ExpansionPanel',
-                'caption'  => '🔌 RS485 / Modbus RTU (z. B. Proxon FWT)',
+                'caption'  => RLT_Text::t('🔌 RS485 / Modbus RTU (e.g. Proxon FWT)'),
                 'expanded' => false,
                 'items'    => [
-                    ['type' => 'Label', 'caption' => 'RTU-Geräte sind im Netzwerk nicht auffindbar. Anlegen: Instanz „RLTHubGateway" erstellen und dort oben unter „Gateway" das ModBus-Gateway wählen (Serial Port → ModBus Gateway, Modus RTU).'],
+                    ['type' => 'Label', 'caption' => RLT_Text::t('RTU devices cannot be found on the network. To set up: create an "RLTHubGateway" instance and select the ModBus gateway under "Gateway" at the top there (Serial Port → ModBus Gateway, mode RTU).')],
                     ['type' => 'Label', 'caption' => $this->gatewaySummary()],
                 ],
             ],
@@ -227,28 +236,28 @@ class RLTHubDiscovery extends IPSModule
             }
         }
         $hiddenLine = $hidden
-            ? [['type' => 'Label', 'caption' => '🙈 Ausgeblendet: ' . implode(', ', $hidden) . ' — zum Wiederzeigen den Haken bei „Ausgeblendet“ entfernen. Ausgeblendete Bereiche arbeiten weiter, nur die Anzeige fehlt.']]
+            ? [['type' => 'Label', 'caption' => RLT_Text::t('🙈 Hidden: %s — to show again, clear the "Hidden" checkbox. Hidden sections keep working, only the display is missing.', implode(', ', $hidden))]]
             : [];
         return [
             'type' => 'ExpansionPanel', 'expanded' => false,
-            'caption' => '🪟  Formular: Aufbau' . ($hidden ? ' (' . count($hidden) . ' ausgeblendet)' : ''),
+            'caption' => $hidden ? RLT_Text::t('🪟  Form: layout (%d hidden)', count($hidden)) : RLT_Text::t('🪟  Form: layout'),
             'items' => array_merge($hiddenLine, [
-                ['type' => 'Label', 'caption' => 'Hier legst du fest, welche Bereiche beim Öffnen des Formulars aufgeklappt sind und in welcher Reihenfolge sie stehen. Symcon merkt sich das Auf- und Zuklappen nicht selbst, deshalb gilt die Einstellung hier jedes Mal beim Öffnen. Sie wirkt nach „Übernehmen“ beim nächsten Öffnen des Formulars.'],
-                ['type' => 'Label', 'caption' => 'Kein Haken heißt „Standard“: wie das Modul es vorsieht. Die Position ist eine Zahl; bei gleicher Zahl bleibt die Standardreihenfolge. „Ausgeblendet“ nimmt einen Bereich aus der Anzeige, ohne dass er etwas verliert: seine Einstellungen bleiben erhalten und wirken weiter. Zum Wiederzeigen den Haken bei „Ausgeblendet“ entfernen oder „Auf Standard zurücksetzen“ klicken. Sind mehrere Haken gesetzt, gilt „Ausgeblendet“ vor „Zugeklappt“ vor „Aufgeklappt“. Die Bereiche oben (Zweck, Neu, Dokumentation) und unten (Forum, Über dieses Modul) bleiben, wo sie sind, und lassen sich nicht ausblenden.'],
+                ['type' => 'Label', 'caption' => RLT_Text::t('Here you decide which sections are expanded when the form opens and in which order they appear. Symcon does not remember expanding and collapsing by itself, so the setting here applies every time the form opens. It takes effect after "Apply" the next time the form is opened.')],
+                ['type' => 'Label', 'caption' => RLT_Text::t('No checkbox means "default": as the module intends. The position is a number; with equal numbers the default order applies. "Hidden" removes a section from the display without it losing anything: its settings are kept and keep working. To show it again, clear the "Hidden" checkbox or click "Reset to default". If several checkboxes are set, "Hidden" wins over "Collapsed", which wins over "Expanded". The sections at the top (purpose, news, documentation) and at the bottom (feedback, about this module) stay where they are and cannot be hidden.')],
                 [
-                    'type' => 'List', 'name' => 'FormLayout', 'caption' => 'Bereiche', 'rowCount' => count($rows), 'add' => false, 'delete' => false,
+                    'type' => 'List', 'name' => 'FormLayout', 'caption' => RLT_Text::t('Sections'), 'rowCount' => count($rows), 'add' => false, 'delete' => false,
                     'loadValuesFromConfiguration' => false,
                     'values' => $rows,
                     'columns' => [
-                        ['caption' => 'Bereich', 'name' => 'Panel', 'width' => 'auto', 'add' => ''],
-                        ['caption' => 'Schlüssel', 'name' => 'Key', 'width' => '0px', 'visible' => false, 'add' => '', 'save' => true],
-                        ['caption' => 'Aufgeklappt', 'name' => 'Opened', 'width' => '110px', 'add' => false, 'edit' => ['type' => 'CheckBox']],
-                        ['caption' => 'Zugeklappt', 'name' => 'Closed', 'width' => '110px', 'add' => false, 'edit' => ['type' => 'CheckBox']],
-                        ['caption' => '🙈 Ausgeblendet', 'name' => 'Hidden', 'width' => '130px', 'add' => false, 'edit' => ['type' => 'CheckBox']],
-                        ['caption' => 'Position', 'name' => 'Pos', 'width' => '100px', 'add' => 1, 'edit' => ['type' => 'NumberSpinner', 'minimum' => 1, 'maximum' => 99]],
+                        ['caption' => RLT_Text::t('Section'), 'name' => 'Panel', 'width' => 'auto', 'add' => ''],
+                        ['caption' => RLT_Text::t('Key'), 'name' => 'Key', 'width' => '0px', 'visible' => false, 'add' => '', 'save' => true],
+                        ['caption' => RLT_Text::t('Expanded'), 'name' => 'Opened', 'width' => '110px', 'add' => false, 'edit' => ['type' => 'CheckBox']],
+                        ['caption' => RLT_Text::t('Collapsed'), 'name' => 'Closed', 'width' => '110px', 'add' => false, 'edit' => ['type' => 'CheckBox']],
+                        ['caption' => RLT_Text::t('🙈 Hidden'), 'name' => 'Hidden', 'width' => '130px', 'add' => false, 'edit' => ['type' => 'CheckBox']],
+                        ['caption' => RLT_Text::t('Position'), 'name' => 'Pos', 'width' => '100px', 'add' => 1, 'edit' => ['type' => 'NumberSpinner', 'minimum' => 1, 'maximum' => 99]],
                     ],
                 ],
-                ['type' => 'Button', 'caption' => '↩️ Auf Standard zurücksetzen', 'onClick' => 'echo ' . static::PREFIX . '_ResetFormLayout($id);'],
+                ['type' => 'Button', 'caption' => RLT_Text::t('↩️ Reset to default'), 'onClick' => 'echo ' . static::PREFIX . '_ResetFormLayout($id);'],
             ]),
         ];
     }
@@ -256,13 +265,13 @@ class RLTHubDiscovery extends IPSModule
     /** Setzt Aufklapp-Zustand und Reihenfolge der Fachpanels im offenen Formular auf den Standard (gilt nach „Übernehmen“). */
     public function ResetFormLayout(): string
     {
-        $captions = ['suche' => 'Suchbereich', 'fundliste' => 'Fundliste', 'rs485' => 'RS485 / Modbus RTU'];
+        $captions = ['suche' => RLT_Text::t('🔎 Search range'), 'fundliste' => RLT_Text::t('📋 Results list'), 'rs485' => 'RS485 / Modbus RTU'];
         $rows = [];
         foreach (self::LAYOUT_KEYS as $i => $k) {
             $rows[] = ['Key' => $k, 'Panel' => $captions[$k], 'Opened' => false, 'Closed' => false, 'Hidden' => false, 'Pos' => $i + 1];
         }
         $this->UpdateFormField('FormLayout', 'values', json_encode($rows, JSON_UNESCAPED_UNICODE));
-        return 'ℹ️ Auf Standard gesetzt. Zum Speichern unten „Übernehmen“ klicken.';
+        return RLT_Text::t('ℹ️ Reset to default. Click "Apply" at the bottom to save.');
     }
 
     // Suchbereich nach der Verbund-Konvention „Wert kommt automatisch: Eingabefeld
@@ -276,12 +285,12 @@ class RLTHubDiscovery extends IPSModule
         $start = trim($start);
         $end = trim($end);
         if ($start !== '' || $end !== '') {
-            return '✏️ Eigener Suchbereich: ' . ($start !== '' ? $start : '?') . ' bis ' . ($end !== '' ? $end : '?') . '.';
+            return RLT_Text::t('✏️ Own search range: %s to %s.', $start !== '' ? $start : '?', $end !== '' ? $end : '?');
         }
         if ($prefix !== '') {
-            return '🔗 Suchbereich: ' . $prefix . '.1 bis ' . $prefix . '.254 (automatisch aus dem eigenen Netz).';
+            return RLT_Text::t('🔗 Search range: %s.1 to %s.254 (automatically from your own network).', $prefix, $prefix);
         }
-        return 'ℹ️ Kein eigenes Netz erkannt — Start- und End-IP-Adresse werden gebraucht.';
+        return RLT_Text::t('ℹ️ No own network detected — start and end IP address are needed.');
     }
 
     private function rangeItems(string $prefix): array
@@ -289,12 +298,12 @@ class RLTHubDiscovery extends IPSModule
         $start = (string)$this->ReadPropertyString('ScanStartIP');
         $end = (string)$this->ReadPropertyString('ScanEndIP');
         $fields = [
-            ['type' => 'ValidationTextBox', 'name' => 'ScanStartIP', 'caption' => 'Start-IP-Adresse', 'validate' => '^$|^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$', 'onChange' => 'RLTD_OnChangeRange($id, $ScanStartIP, $ScanEndIP);'],
-            ['type' => 'ValidationTextBox', 'name' => 'ScanEndIP', 'caption' => 'End-IP-Adresse', 'validate' => '^$|^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$', 'onChange' => 'RLTD_OnChangeRange($id, $ScanStartIP, $ScanEndIP);'],
+            ['type' => 'ValidationTextBox', 'name' => 'ScanStartIP', 'caption' => RLT_Text::t('Start IP address'), 'validate' => '^$|^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$', 'onChange' => 'RLTD_OnChangeRange($id, $ScanStartIP, $ScanEndIP);'],
+            ['type' => 'ValidationTextBox', 'name' => 'ScanEndIP', 'caption' => RLT_Text::t('End IP address'), 'validate' => '^$|^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$', 'onChange' => 'RLTD_OnChangeRange($id, $ScanStartIP, $ScanEndIP);'],
         ];
         $line = RLT_Ui::line('ScanRangeLine', $this->rangeLine($prefix, $start, $end));
         if (trim($start) === '' && trim($end) === '' && $prefix !== '') {
-            return [$line, ['type' => 'ExpansionPanel', 'caption' => 'Eigenen Suchbereich stattdessen verwenden', 'expanded' => false, 'items' => $fields]];
+            return [$line, ['type' => 'ExpansionPanel', 'caption' => RLT_Text::t('Use own search range instead'), 'expanded' => false, 'items' => $fields]];
         }
         return array_merge([$line], $fields);
     }
@@ -314,19 +323,19 @@ class RLTHubDiscovery extends IPSModule
         if ($StartIP === '' || $EndIP === '') {
             $prefix = $this->guessLocalSubnetPrefix();
             if ($prefix === '') {
-                return '❌ Start- und End-IP-Adresse eintragen (das eigene Netz ließ sich nicht ermitteln).';
+                return RLT_Text::t('❌ Enter a start and end IP address (your own network could not be determined).');
             }
             $StartIP = $prefix . '.1';
             $EndIP   = $prefix . '.254';
-            $note    = ' (Bereich aus dem eigenen Netz abgeleitet: ' . $StartIP . ' – ' . $EndIP . ')';
+            $note    = RLT_Text::t(' (range derived from your own network: %s – %s)', $StartIP, $EndIP);
         }
         $ips = $this->expandRange($StartIP, $EndIP);
         if (count($ips) === 0) {
-            return '❌ Ungültiger IP-Bereich.';
+            return RLT_Text::t('❌ Invalid IP range.');
         }
         if (count($ips) > self::MAX_HOSTS) {
             $ips = array_slice($ips, 0, self::MAX_HOSTS);
-            $note .= ' — auf ' . self::MAX_HOSTS . ' Adressen begrenzt';
+            $note .= RLT_Text::t(' — limited to %d addresses', self::MAX_HOSTS);
         }
 
         $open = $this->scanPortOpen($ips, $Port, 4.0);
@@ -344,7 +353,7 @@ class RLTHubDiscovery extends IPSModule
                 }
             }
         }
-        $details = count($ips) . ' Adressen geprüft, ' . count($open) . ' mit offenem Port ' . $Port . ', ' . count($rows) . ' Lüftungsanlage(n) erkannt' . $note . '.';
+        $details = RLT_Text::t('%d addresses checked, %d with open port %d, %d ventilation system(s) detected%s.', count($ips), count($open), $Port, count($rows), $note);
         return $this->finish($details, $rows);
     }
 
@@ -366,7 +375,7 @@ class RLTHubDiscovery extends IPSModule
     {
         $values = [];
         foreach ($rows as $r) {
-            $caption = RLT_Drivers::DRIVERS[$r['device']]['caption'] ?? $r['device'];
+            $caption = RLT_Text::t(RLT_Drivers::DRIVERS[$r['device']]['caption'] ?? $r['device']);
             $row = [
                 'address' => $r['host'],
                 'device'  => $caption,
@@ -420,7 +429,7 @@ class RLTHubDiscovery extends IPSModule
             if (($r['host'] ?? '') === $Host && (int)($r['port'] ?? 0) === $Port && (int)($r['unit'] ?? 0) === $UnitId) {
                 return [
                     'found'  => true,
-                    'device' => RLT_Drivers::DRIVERS[$r['device']]['caption'] ?? (string)$r['device'],
+                    'device' => RLT_Text::t(RLT_Drivers::DRIVERS[$r['device']]['caption'] ?? (string)$r['device']),
                     'ts'     => (int)$this->ReadAttributeInteger('LastScanTs'),
                 ];
             }
@@ -433,23 +442,25 @@ class RLTHubDiscovery extends IPSModule
         $gateways = IPS_GetInstanceListByModuleID(self::MODBUS_GATEWAY_GUID);
         $hubs = IPS_GetInstanceListByModuleID(self::GATEWAY_HUB_GUID);
         if (count($gateways) === 0 && count($hubs) === 0) {
-            return 'ℹ️ Keine ModBus-Gateways und keine RLTHubGateway-Instanzen gefunden — RS485-Geräte lassen sich ohne ModBus-Gateway nicht einbinden.';
+            return RLT_Text::t('ℹ️ No ModBus gateways and no RLTHubGateway instances found — RS485 devices cannot be integrated without a ModBus gateway.');
         }
         $lines = [];
         $unconnected = 0;
         foreach ($gateways as $iid) {
-            $lines[] = '• ModBus-Gateway „' . IPS_GetName($iid) . '" (#' . $iid . ', Geräte-ID ' . (int)@IPS_GetProperty($iid, 'DeviceID') . ')';
+            $lines[] = RLT_Text::t('• ModBus gateway "%s" (#%d, device ID %d)', IPS_GetName($iid), $iid, (int)@IPS_GetProperty($iid, 'DeviceID'));
         }
         foreach ($hubs as $iid) {
             $conn = (int)(@IPS_GetInstance($iid)['ConnectionID'] ?? 0);
             if ($conn === 0) {
                 $unconnected++;
             }
-            $lines[] = '• RLTHubGateway „' . IPS_GetName($iid) . '" (#' . $iid . ') ' . ($conn > 0 ? 'verbunden mit #' . $conn : 'ohne Gateway');
+            $lines[] = $conn > 0
+                ? RLT_Text::t('• RLTHubGateway "%s" (#%d) connected to #%d', IPS_GetName($iid), $iid, $conn)
+                : RLT_Text::t('• RLTHubGateway "%s" (#%d) without gateway', IPS_GetName($iid), $iid);
         }
         $head = $unconnected > 0
-            ? '⚠️ ' . $unconnected . ' RLTHubGateway-Instanz(en) ohne ModBus-Gateway — dort oben unter „Gateway" eines wählen:'
-            : '✅ ' . count($gateways) . ' ModBus-Gateway(s) und ' . count($hubs) . ' RLTHubGateway-Instanz(en) gefunden:';
+            ? RLT_Text::t('⚠️ %d RLTHubGateway instance(s) without a ModBus gateway — select one under "Gateway" at the top there:', $unconnected)
+            : RLT_Text::t('✅ %d ModBus gateway(s) and %d RLTHubGateway instance(s) found:', count($gateways), count($hubs));
         return $head . "\n" . implode("\n", $lines);
     }
 

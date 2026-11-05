@@ -23,19 +23,28 @@ class RLTHubGateway extends IPSModule
     public const DEFAULT_DEVICE = 'proxon_fwt';
     public const TRANSPORT = 'rtu';
 
-    public const NEWS_VERSION = '0.4.3';
+    public const NEWS_VERSION = '0.5.0';
     public const FORUM_THREAD_URL = 'https://community.symcon.de/t/modul-nrg-stack-rlthub-lueftungsanlagen-rlt-kwl-per-modbus-anbinden-robatherm-truecontrol-proxon-fwt/144442';
     public const LICENSE_URL = 'https://github.com/DG65/NRGRLTHub/blob/beta/LICENSE';
     public const PURPOSE = [
-        'Liest eine Lüftungsanlage über RS485/Modbus RTU aus — mit Symcons eigenem ModBus-Gateway (Serial Port → ModBus Gateway → diese Instanz), z. B. an einem USB-RS485-Dongle am Symcon-Host oder am RS485-Anschluss einer Symbox.',
-        'Der Nutzen: Geräte, die nur eine serielle Schnittstelle haben (z. B. Proxon FWT), lassen sich einbinden, ohne dass dieses Modul selbst eine serielle Schnittstelle öffnen muss. Werte: Außen-, Zu- und Ablufttemperatur, Wirkungsgrad der Wärmerückgewinnung (berechnet), Filterlaufzeit, Störung. Anlagen mit Modbus TCP bindest du mit RLTHub an.',
-        'Das Modul liest nur — es steuert die Anlage nicht.',
+        'Reads a ventilation system via RS485/Modbus RTU — using Symcon\'s own ModBus gateway (Serial Port → ModBus Gateway → this instance), e.g. on a USB-RS485 dongle at the Symcon host or at the RS485 connection of a Symbox.',
+        'The benefit: devices that only have a serial interface (e.g. Proxon FWT) can be integrated without this module having to open a serial interface itself. Values: outdoor, supply and extract air temperature, heat recovery efficiency (calculated), filter runtime, fault. You connect plants with Modbus TCP using RLTHub.',
+        'The module only reads — it does not control the plant.',
     ];
     public const NEWS = [
-        '• 🔧 Archiv: Neue Option „Messwerte im Archiv aufzeichnen“ (Standard aus). Bisher schaltete das Modul die Aufzeichnung bei jedem Übernehmen von selbst ein. Jetzt entscheidest du; das Modul schaltet eine Aufzeichnung nie aus. Bestehende Aufzeichnungen bleiben unverändert.',
-        '• 🆕 Neuer Gerätetyp: Pichler LG mit ES2020-Steuerung (z. B. LG 350) über Modbus RTU (Werk: 19200 Baud, Parität gerade, Adresse 20). Temperaturen, berechneter WRG-Wirkungsgrad, Zu-/Abluft-Volumenstrom in m³/h, Summenstörmeldung, Filtermeldung und Restzeit bis zum Filterwechsel.',
-        '• ⚠️ Noch an keiner Pichler-Anlage geprüft (Adress-Basis, Zuordnung der Felder). Details im Panel „Dokumentation & Hilfe“. Testberichte sind willkommen.',
+        '• 🌐 New: bilingual (German/English). The form, messages, variable names and notes now follow the Symcon language. Existing variables keep their names; new ones are created in the current language. Identifiers, settings and the contract with other modules are unchanged.',
+        '• 🔧 Archive: new option "Record measured values in the archive" (default off). Until now the module switched recording on by itself every time you applied changes. Now you decide; the module never switches a recording off. Existing recordings stay as they are.',
+        '• 🆕 New device type: Pichler LG with ES2020 controller (e.g. LG 350) via Modbus RTU (factory: 19200 baud, even parity, address 20). Temperatures, calculated heat recovery efficiency, supply/extract air flow in m³/h, collective fault signal, filter alarm and time remaining until the filter change.',
+        '• ⚠️ Not yet checked on any Pichler plant (address base, mapping of the fields). Details in the panel "Documentation & help". Test reports are welcome.',
     ];
+
+    public function __construct($InstanceID)
+    {
+        parent::__construct($InstanceID);
+        RLT_Text::setTranslator(RLT_Text::withMemo(function (string $text): string {
+            return $this->Translate($text);
+        }));
+    }
 
     public function Create()
     {
@@ -57,13 +66,13 @@ class RLTHubGateway extends IPSModule
             $parent = (int)(@IPS_GetInstance($this->InstanceID)['ConnectionID'] ?? 0);
             $deviceId = @IPS_GetProperty($parent, 'DeviceID');
             $slave = ($deviceId !== false && $deviceId !== null)
-                ? '🔗 Slave-ID (Geräte-ID): ' . (int)$deviceId . ' (automatisch vom ModBus-Gateway „' . IPS_GetName($parent) . '", dort einstellbar)'
-                : 'ℹ️ Slave-ID: wird am ModBus-Gateway „' . IPS_GetName($parent) . '" eingestellt (Geräte-ID), dort nicht auslesbar.';
+                ? RLT_Text::t('🔗 Slave ID (device ID): %d (automatically from the ModBus gateway "%s", adjustable there)', (int)$deviceId, IPS_GetName($parent))
+                : RLT_Text::t('ℹ️ Slave ID: is set at the ModBus gateway "%s" (device ID), cannot be read out there.', IPS_GetName($parent));
         } else {
-            $slave = 'ℹ️ Slave-ID: wird am ModBus-Gateway eingestellt (Geräte-ID) — noch kein Gateway verbunden.';
+            $slave = RLT_Text::t('ℹ️ Slave ID: is set at the ModBus gateway (device ID) — no gateway connected yet.');
         }
         return [
-            ['type' => 'Label', 'caption' => 'So wird verbunden: Der Anschluss läuft über Symcons ModBus-Gateway. Oben unter „Gateway" das ModBus-Gateway wählen (Symcon-Objektbaum: Serial Port → ModBus Gateway, Gateway-Modus RTU für RS485).'],
+            ['type' => 'Label', 'caption' => RLT_Text::t('How to connect: the connection runs via Symcon\'s ModBus gateway. Select the ModBus gateway under "Gateway" above (Symcon object tree: Serial Port → ModBus Gateway, gateway mode RTU for RS485).')],
             RLT_Ui::line('SlaveIdLine', $slave),
         ];
     }
@@ -82,7 +91,9 @@ class RLTHubGateway extends IPSModule
         }
         $parent = (int)(@IPS_GetInstance($this->InstanceID)['ConnectionID'] ?? 0);
         $deviceId = @IPS_GetProperty($parent, 'DeviceID');
-        return 'ModBus-Gateway „' . IPS_GetName($parent) . '" (#' . $parent . ($deviceId !== false && $deviceId !== null ? ', Geräte-ID ' . (int)$deviceId : '') . ')';
+        return $deviceId !== false && $deviceId !== null
+            ? RLT_Text::t('ModBus gateway "%s" (#%d, device ID %d)', IPS_GetName($parent), $parent, (int)$deviceId)
+            : RLT_Text::t('ModBus gateway "%s" (#%d)', IPS_GetName($parent), $parent);
     }
 
     protected function rltConnectionStatus(): int

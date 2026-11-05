@@ -44,12 +44,12 @@ trait RLT_PanelTrait
         }
         $items = [];
         foreach (static::PURPOSE as $line) {
-            $items[] = ['type' => 'Label', 'caption' => $line];
+            $items[] = ['type' => 'Label', 'caption' => RLT_Text::t($line)];
         }
-        $items[] = ['type' => 'Button', 'caption' => 'Verstanden – nicht mehr anzeigen', 'onClick' => static::PREFIX . '_AckPurposeIntro($id);'];
+        $items[] = ['type' => 'Button', 'caption' => RLT_Text::t('Understood – do not show again'), 'onClick' => static::PREFIX . '_AckPurposeIntro($id);'];
         return [
             'type' => 'ExpansionPanel', 'name' => 'PurposeIntroPanel', 'expanded' => true,
-            'caption' => '👋  Wozu dieses Modul?',
+            'caption' => RLT_Text::t('👋  What is this module for?'),
             'items' => $items,
         ];
     }
@@ -68,12 +68,12 @@ trait RLT_PanelTrait
         }
         $items = [];
         foreach (static::NEWS as $line) {
-            $items[] = ['type' => 'Label', 'caption' => $line];
+            $items[] = ['type' => 'Label', 'caption' => RLT_Text::t($line)];
         }
-        $items[] = ['type' => 'Button', 'caption' => 'Verstanden – nicht mehr anzeigen', 'onClick' => static::PREFIX . '_AckNews($id);'];
+        $items[] = ['type' => 'Button', 'caption' => RLT_Text::t('Understood – do not show again'), 'onClick' => static::PREFIX . '_AckNews($id);'];
         return [
             'type' => 'ExpansionPanel', 'name' => 'NewsPanel', 'expanded' => true,
-            'caption' => '🆕  Neu in Version ' . static::NEWS_VERSION,
+            'caption' => RLT_Text::t('🆕  New in version %s', static::NEWS_VERSION),
             'items' => $items,
         ];
     }
@@ -92,15 +92,15 @@ trait RLT_PanelTrait
         }
         $items = [];
         if (static::FORUM_THREAD_URL !== '') {
-            $items[] = ['type' => 'Label', 'caption' => static::MODULE_NAME . ' ist Beta — Rückmeldungen sind ausdrücklich willkommen im Community-Thread.'];
-            $items[] = ['type' => 'Button', 'caption' => 'Zum Forums-Thread', 'onClick' => "echo '" . static::FORUM_THREAD_URL . "';", 'link' => true];
+            $items[] = ['type' => 'Label', 'caption' => RLT_Text::t('%s is in beta — feedback is explicitly welcome in the community thread.', static::MODULE_NAME)];
+            $items[] = ['type' => 'Button', 'caption' => RLT_Text::t('To the forum thread'), 'onClick' => "echo '" . static::FORUM_THREAD_URL . "';", 'link' => true];
         } else {
-            $items[] = ['type' => 'Label', 'caption' => static::MODULE_NAME . ' ist Beta — Rückmeldungen sind ausdrücklich willkommen. Der Thread im Symcon-Forum wird noch angelegt, der Link erscheint hier, sobald er existiert.'];
+            $items[] = ['type' => 'Label', 'caption' => RLT_Text::t('%s is in beta — feedback is explicitly welcome. The thread in the Symcon forum is still to be created; the link will appear here as soon as it exists.', static::MODULE_NAME)];
         }
-        $items[] = ['type' => 'Button', 'caption' => 'Verstanden – nicht mehr anzeigen', 'onClick' => static::PREFIX . '_AckForumHint($id);'];
+        $items[] = ['type' => 'Button', 'caption' => RLT_Text::t('Understood – do not show again'), 'onClick' => static::PREFIX . '_AckForumHint($id);'];
         return [
             'type' => 'ExpansionPanel', 'name' => 'ForumHintPanel', 'expanded' => true,
-            'caption' => '💬  Feedback im Symcon-Forum',
+            'caption' => RLT_Text::t('💬  Feedback in the Symcon forum'),
             'items' => $items,
         ];
     }
@@ -119,14 +119,14 @@ trait RLT_PanelTrait
     {
         return [
             'type' => 'ExpansionPanel', 'expanded' => false,
-            'caption' => '🧡  Über dieses Modul',
+            'caption' => RLT_Text::t('🧡  About this module'),
             'items' => [
-                ['type' => 'Label', 'caption' => 'Entstanden aus echter Begeisterung für die eigene Anlage — und ein paar durchgetippten Abenden. Trotzdem: Software-Hobby hin oder her, das hier ist geistiges Eigentum und echte Arbeit steckt drin.'],
-                ['type' => 'Label', 'caption' => 'Lizenz: PolyForm Noncommercial 1.0.0 — privat und nicht-kommerziell frei nutzbar, für den gewerblichen Einsatz braucht es eine gesonderte Lizenz vom Rechteinhaber.'],
-                ['type' => 'Button', 'caption' => 'Lizenztext ansehen', 'onClick' => "echo '" . static::LICENSE_URL . "';", 'link' => true],
-                ['type' => 'Label', 'caption' => 'Gewerbliche Nutzung oder Fragen zur Lizenz? Einfach melden: dietmar@gureth.eu'],
-                ['type' => 'Label', 'caption' => 'Gefällt dir das Modul und du möchtest trotzdem etwas dalassen? Über eine kleine Spende freue ich mich — völlig freiwillig, keine Gegenleistung nötig.'],
-                ['type' => 'Button', 'caption' => '☕  Spenden via PayPal', 'onClick' => "echo 'https://paypal.me/DietmarGureth';", 'link' => true],
+                ['type' => 'Label', 'caption' => RLT_Text::t('Born out of genuine enthusiasm for my own installation — and a few evenings of typing. Still: hobby software or not, this is intellectual property and real work went into it.')],
+                ['type' => 'Label', 'caption' => RLT_Text::t('License: PolyForm Noncommercial 1.0.0 — free for private and non-commercial use; commercial use needs a separate license from the rights holder.')],
+                ['type' => 'Button', 'caption' => RLT_Text::t('View license text'), 'onClick' => "echo '" . static::LICENSE_URL . "';", 'link' => true],
+                ['type' => 'Label', 'caption' => RLT_Text::t('Commercial use or questions about the license? Just get in touch: dietmar@gureth.eu')],
+                ['type' => 'Label', 'caption' => RLT_Text::t('Do you like the module and still want to leave something? I would be happy about a small donation — completely voluntary, nothing owed in return.')],
+                ['type' => 'Button', 'caption' => RLT_Text::t('☕  Donate via PayPal'), 'onClick' => "echo 'https://paypal.me/DietmarGureth';", 'link' => true],
             ],
         ];
     }

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0 (05.11.2026)
+
+- **Zweisprachig (Deutsch/Englisch).** Formular, Statusmeldungen, Hinweise, Log- und Verbindungstesttexte, Herstellerhinweise, Variablennamen und das Neu-Panel folgen jetzt der Symcon-Sprache. Quelltexte sind englisch, die deutsche Fassung steht in `libs/locale.json`; `php .tools/locale-bauen.php` kopiert sie in die drei Modulordner (Symcon liest `locale.json` nur dort). Englische Dokumentation: `README.en.md`.
+- **Übersetzung ohne den Automat-Fehler** (SUITE.md Stolperstein 24): Neue Klasse `RLT_Text` fragt Symcons `Translate()` je Text höchstens einmal je Prozess und merkt sich die Antwort. Formular, Lesezyklus, Vertragsabfrage und Verbindungstest kosten danach keinen Symcon-Aufruf mehr. Treiber und Modbus-Clients haben kein `$this->Translate()`; die Module setzen im Konstruktor den Übersetzer.
+- Bestehende Variablen behalten ihren Namen, neue Variablen werden in der Symcon-Sprache angelegt. Idents, Properties, Funktionen und der Vertrag `Type=>'ventilation'` 1.0 bleiben unverändert.
+- Deutsch zeigt Dezimalkomma und TT.MM.JJJJ (auch in den Suchtexten der Treiber, vorher mit Punkt), Englisch Dezimalpunkt und ISO-Datum.
+- Prüfstand Block 16: jeder Text im Code (auch Treiberdaten, Neu- und Zweck-Texte) steht in `locale.json`, keine verwaisten Einträge, Platzhalter in beiden Sprachen gleich, kein deutscher Text mehr im Code, englisches Formular aller drei Module in mehreren Zuständen ohne deutsche Reste, kein Symcon-Aufruf mehr nach dem ersten Mal, Kennungen unverändert.
+- Enthält 0.4.4 („Formular: Aufbau“ in RLTHubDiscovery).
+
 ## 0.4.4 (29.10.2026)
 
 - **Verbund-Konvention „Formular: Aufbau“ (SUITE.md 3a):** RLTHubDiscovery bekommt das Panel

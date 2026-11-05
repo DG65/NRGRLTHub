@@ -16,20 +16,28 @@ class RLTHub extends IPSModule
     public const DEFAULT_DEVICE = 'robatherm_truecontrol';
     public const TRANSPORT = 'tcp';
 
-    public const NEWS_VERSION = '0.4.3';
+    public const NEWS_VERSION = '0.5.0';
     public const FORUM_THREAD_URL = 'https://community.symcon.de/t/modul-nrg-stack-rlthub-lueftungsanlagen-rlt-kwl-per-modbus-anbinden-robatherm-truecontrol-proxon-fwt/144442';
     public const LICENSE_URL = 'https://github.com/DG65/NRGRLTHub/blob/beta/LICENSE';
     public const PURPOSE = [
-        'Liest eine Lüftungsanlage (RLT/KWL) per Modbus TCP aus: Außen-, Zu- und Ablufttemperatur, den berechneten Wirkungsgrad der Wärmerückgewinnung, die Filterlaufzeit und die Sammelstörung — lokal, ohne Cloud und ohne Herstellerkonto.',
-        'Der Nutzen: Werte, die sonst nur in der Oberfläche der Anlage stehen, sind in Symcon verfügbar — für Auswertungen, Meldungen bei Störung oder Filterwechsel und als Datenbasis für Energiemanagement und Dashboard. Geräte mit RS485/Modbus RTU bindest du mit RLTHubGateway an, mehrere Anlagen im Netz findet RLTHubDiscovery.',
-        'Das Modul liest nur — es steuert die Anlage nicht.',
+        'Reads a ventilation system (air handling unit / heat recovery ventilation) via Modbus TCP: outdoor, supply and extract air temperature, the calculated heat recovery efficiency, the filter runtime and the general fault — local, without cloud and without a manufacturer account.',
+        'The benefit: values that are otherwise only shown in the plant\'s own interface become available in Symcon — for evaluations, notifications on faults or filter changes, and as a data basis for energy management and dashboard. You connect devices with RS485/Modbus RTU using RLTHubGateway; RLTHubDiscovery finds several plants on the network.',
+        'The module only reads — it does not control the plant.',
     ];
     public const NEWS = [
-        '• 🔧 Archiv: Neue Option „Messwerte im Archiv aufzeichnen“ (Standard aus). Bisher schaltete das Modul die Aufzeichnung bei jedem Übernehmen von selbst ein. Jetzt entscheidest du; das Modul schaltet eine Aufzeichnung nie aus. Bestehende Aufzeichnungen bleiben unverändert.',
-        '• 🔧 Fix: Das Feld „IP-Adresse" zeigte nur einen festen Satz („trägt RLTHubDiscovery automatisch ein"), egal ob das tatsächlich stimmte. Jetzt eine echte Zeile: 🔗, wenn die Adresse wirklich aus dem letzten Suchlauf von RLTHubDiscovery stammt (mit Fund-Zeitpunkt und Gerätetyp), sonst ✏️ eigene Angabe bzw. ℹ️ wenn noch nichts eingetragen ist.',
-        '• 🆕 Neuer Gerätetyp: Pichler LG mit ES2020-Steuerung (z. B. LG 350) per Modbus TCP (ab Firmware 1.6, am Gerät einzuschalten). Temperaturen, berechneter WRG-Wirkungsgrad, Zu-/Abluft-Volumenstrom in m³/h, Summenstörmeldung, Filtermeldung und Restzeit bis zum Filterwechsel.',
-        '• ⚠️ Noch an keiner Pichler-Anlage geprüft (Adress-Basis, Zuordnung der Felder). Details im Panel „Dokumentation & Hilfe“. Testberichte sind willkommen.',
+        '• 🌐 New: bilingual (German/English). The form, messages, variable names and notes now follow the Symcon language. Existing variables keep their names; new ones are created in the current language. Identifiers, settings and the contract with other modules are unchanged.',
+        '• 🔧 Archive: new option "Record measured values in the archive" (default off). Until now the module switched recording on by itself every time you applied changes. Now you decide; the module never switches a recording off. Existing recordings stay as they are.',
+        '• 🆕 New device type: Pichler LG with ES2020 controller (e.g. LG 350) via Modbus TCP (from firmware 1.6, to be switched on at the device). Temperatures, calculated heat recovery efficiency, supply/extract air flow in m³/h, collective fault signal, filter alarm and time remaining until the filter change.',
+        '• ⚠️ Not yet checked on any Pichler plant (address base, mapping of the fields). Details in the panel "Documentation & help". Test reports are welcome.',
     ];
+
+    public function __construct($InstanceID)
+    {
+        parent::__construct($InstanceID);
+        RLT_Text::setTranslator(RLT_Text::withMemo(function (string $text): string {
+            return $this->Translate($text);
+        }));
+    }
 
     public function Create()
     {
@@ -59,7 +67,7 @@ class RLTHub extends IPSModule
     private function rltAddressLine(string $host, int $port, int $unitId): string
     {
         if ($host === '') {
-            return 'ℹ️ Noch keine IP-Adresse eingetragen — wird für die Verbindung gebraucht. Über „RLTHubDiscovery" gefundene Anlagen lassen sich mit einem Klick übernehmen.';
+            return RLT_Text::t('ℹ️ No IP address entered yet — needed for the connection. Plants found via "RLTHubDiscovery" can be taken over with one click.');
         }
         foreach (IPS_GetInstanceListByModuleID(self::DISCOVERY_GUID) as $iid) {
             try {
@@ -68,11 +76,16 @@ class RLTHub extends IPSModule
                 continue;
             }
             if (!empty($m['found'])) {
-                $when = ((int)($m['ts'] ?? 0)) > 0 ? ' (gefunden ' . date('d.m.Y H:i:s', (int)$m['ts']) . ' Uhr' . (($m['device'] ?? '') !== '' ? ' als ' . $m['device'] : '') . ')' : '';
-                return '🔗 IP-Adresse: ' . $host . ':' . $port . ' (Unit-ID ' . $unitId . '), automatisch von RLTHubDiscovery übernommen' . $when . '.';
+                $when = '';
+                if (((int)($m['ts'] ?? 0)) > 0) {
+                    $when = ($m['device'] ?? '') !== ''
+                        ? RLT_Text::t(' (found %s as %s)', RLT_Text::time((int)$m['ts']), $m['device'])
+                        : RLT_Text::t(' (found %s)', RLT_Text::time((int)$m['ts']));
+                }
+                return RLT_Text::t('🔗 IP address: %s:%d (unit ID %d), taken over automatically from RLTHubDiscovery%s.', $host, $port, $unitId, $when);
             }
         }
-        return '✏️ Eigene Angabe: ' . $host . ':' . $port . ' (Unit-ID ' . $unitId . ').';
+        return RLT_Text::t('✏️ Own setting: %s:%d (unit ID %d).', $host, $port, $unitId);
     }
 
     protected function rltConnectionItems(): array
@@ -80,12 +93,12 @@ class RLTHub extends IPSModule
         $host = trim((string)$this->ReadPropertyString('Host'));
         $line = $this->rltAddressLine($host, (int)$this->ReadPropertyInteger('Port'), (int)$this->ReadPropertyInteger('UnitId'));
         $fields = [
-            ['type' => 'ValidationTextBox', 'name' => 'Host', 'caption' => 'IP-Adresse', 'validate' => '^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$', 'onChange' => 'RLT_OnChangeHost($id, $Host);'],
-            ['type' => 'NumberSpinner', 'name' => 'Port', 'caption' => 'TCP-Port', 'minimum' => 1, 'maximum' => 65535],
-            ['type' => 'NumberSpinner', 'name' => 'UnitId', 'caption' => 'Unit ID', 'minimum' => 1, 'maximum' => 247],
+            ['type' => 'ValidationTextBox', 'name' => 'Host', 'caption' => RLT_Text::t('IP address'), 'validate' => '^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$', 'onChange' => 'RLT_OnChangeHost($id, $Host);'],
+            ['type' => 'NumberSpinner', 'name' => 'Port', 'caption' => RLT_Text::t('TCP port'), 'minimum' => 1, 'maximum' => 65535],
+            ['type' => 'NumberSpinner', 'name' => 'UnitId', 'caption' => RLT_Text::t('Unit ID'), 'minimum' => 1, 'maximum' => 247],
         ];
         if ($host !== '' && strpos($line, '🔗') === 0) {
-            return [RLT_Ui::line('AddressLine', $line), ['type' => 'ExpansionPanel', 'caption' => 'Eigene Verbindung stattdessen verwenden', 'expanded' => false, 'items' => $fields]];
+            return [RLT_Ui::line('AddressLine', $line), ['type' => 'ExpansionPanel', 'caption' => RLT_Text::t('Use own connection instead'), 'expanded' => false, 'items' => $fields]];
         }
         return array_merge([RLT_Ui::line('AddressLine', $line)], $fields);
     }
@@ -98,8 +111,8 @@ class RLTHub extends IPSModule
     {
         $host = trim($host);
         $caption = $host === ''
-            ? 'ℹ️ Noch keine IP-Adresse eingetragen — wird für die Verbindung gebraucht. Über „RLTHubDiscovery" gefundene Anlagen lassen sich mit einem Klick übernehmen.'
-            : '✏️ Eigene Angabe: ' . $host . ':' . (int)$this->ReadPropertyInteger('Port') . ' (Unit-ID ' . (int)$this->ReadPropertyInteger('UnitId') . ').';
+            ? RLT_Text::t('ℹ️ No IP address entered yet — needed for the connection. Plants found via "RLTHubDiscovery" can be taken over with one click.')
+            : RLT_Text::t('✏️ Own setting: %s:%d (unit ID %d).', $host, (int)$this->ReadPropertyInteger('Port'), (int)$this->ReadPropertyInteger('UnitId'));
         $this->UpdateFormField('AddressLine', 'caption', $caption);
         $this->UpdateFormField('AddressLine', 'color', RLT_Ui::color($caption));
     }
@@ -112,7 +125,7 @@ class RLTHub extends IPSModule
     protected function rltConnectionTarget(): string
     {
         $host = trim((string)$this->ReadPropertyString('Host'));
-        return $host === '' ? '' : $host . ':' . (int)$this->ReadPropertyInteger('Port') . ' (Unit-ID ' . (int)$this->ReadPropertyInteger('UnitId') . ')';
+        return $host === '' ? '' : RLT_Text::t('%s:%d (unit ID %d)', $host, (int)$this->ReadPropertyInteger('Port'), (int)$this->ReadPropertyInteger('UnitId'));
     }
 
     protected function rltClient(): RLT_ModbusClientInterface
