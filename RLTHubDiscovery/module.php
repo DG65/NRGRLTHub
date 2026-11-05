@@ -30,14 +30,14 @@ class RLTHubDiscovery extends IPSModule
     public const LICENSE_URL = 'https://github.com/DG65/NRGRLTHub/blob/beta/LICENSE';
     public const PURPOSE = [
         'Searches your local network for ventilation systems with Modbus TCP and creates a prefilled RLTHub instance on click — IP address, port, unit ID and device type do not have to be entered by hand.',
-        'The benefit: with several plants a few clicks instead of configuring each instance manually. A find only means that plausible temperatures are present at the registers of the respective device type — please check every suggestion.',
+        'The benefit: with several systems, a few clicks replace configuring each instance by hand. A find only means that plausible temperatures are present at the registers of the respective device type — please check every suggestion.',
         'The module itself measures nothing — the actual data collection is done afterwards by the newly created RLTHub instance. Devices with RS485/Modbus RTU cannot be found on the network; RLTHubGateway exists for those.',
     ];
     public const NEWS = [
-        '• 🌐 New: bilingual (German/English). The form, messages and notes now follow the Symcon language. Identifiers and settings are unchanged.',
+        '• 🌐 New: bilingual (German/English). The form, messages and notes now follow the Symcon language setting. Identifiers and settings are unchanged.',
         '• 🪟 New: choose the form layout yourself — in the panel "Form: layout", decide for each section (search range, results list, RS485) whether it is expanded, collapsed or hidden when the form opens, and where it appears. Hidden sections keep working.',
-        '• 🆕 The search now also detects Pichler LG plants (ES2020 controller) with Modbus TCP and names the type (LG 350, 450 or 740). As before: a find is a suggestion that you should check.',
-        '• ⚠️ Not yet checked on any Pichler plant.',
+        '• 🆕 The search now also detects Pichler LG systems (ES2020 controller) with Modbus TCP and names the type (LG 350, 450 or 740). As before, a find is only a suggestion — please check it.',
+        '• ⚠️ Not yet checked on any Pichler system.',
     ];
 
     private const HUB_GUID            = '{19C33A5B-8C10-45F5-9A33-9928D9005B69}';
@@ -83,7 +83,7 @@ class RLTHubDiscovery extends IPSModule
         }
         $rows = json_decode((string)$this->ReadAttributeString('ResultsJSON'), true);
         $count = is_array($rows) ? count($rows) : 0;
-        return RLT_Text::t('%s %d ventilation system(s) found (last at %s).', $count > 0 ? '✅' : '⚠️', $count, RLT_Text::clock($ts));
+        return RLT_Text::t('%s %d ventilation system(s) found (last search at %s).', $count > 0 ? '✅' : '⚠️', $count, RLT_Text::clock($ts));
     }
 
     public function GetConfigurationForm()
@@ -101,10 +101,10 @@ class RLTHubDiscovery extends IPSModule
             'caption'  => RLT_Text::t('📖 Documentation & help'),
             'expanded' => false,
             'items'    => [
-                ['type' => 'Label', 'caption' => RLT_Text::t('%s version %s — not yet verified on any real plant.', static::MODULE_NAME, $version)],
-                ['type' => 'Label', 'caption' => RLT_Text::t('Procedure: check the search range, press "Search network", select the desired plant in the results list and choose "Create". The new RLTHub instance is prefilled and only has to be checked and switched active.')],
-                ['type' => 'Label', 'caption' => RLT_Text::t('The search checks which addresses have the Modbus port open and reads the registers of every supported device type there, read-only. A find means: plausible temperatures are present at these registers. Controllers such as Robatherm TrueControl have no fixed identifying feature — please check every suggestion.')],
-                ['type' => 'Label', 'caption' => RLT_Text::t('A device that returns 0 everywhere, or one that answers the registers with a Modbus error, does not count as a find.')],
+                ['type' => 'Label', 'caption' => RLT_Text::t('%s version %s — not yet verified on any real system.', static::MODULE_NAME, $version)],
+                ['type' => 'Label', 'caption' => RLT_Text::t('Procedure: check the search range, click "Search network", select the desired system in the results list and click "Create". The new RLTHub instance is prefilled; you only need to check it and activate it.')],
+                ['type' => 'Label', 'caption' => RLT_Text::t('The search checks which addresses have the Modbus port open and reads the registers of every supported device type there, read-only. A find means: plausible temperatures are present at these registers. Controllers such as Robatherm TrueControl have no reliable identifying characteristic — please check every suggestion.')],
+                ['type' => 'Label', 'caption' => RLT_Text::t('A device that returns 0 everywhere, or one that responds to the registers with a Modbus error, does not count as a find.')],
             ],
         ];
 
@@ -159,7 +159,7 @@ class RLTHubDiscovery extends IPSModule
                 'caption'  => RLT_Text::t('🔌 RS485 / Modbus RTU (e.g. Proxon FWT)'),
                 'expanded' => false,
                 'items'    => [
-                    ['type' => 'Label', 'caption' => RLT_Text::t('RTU devices cannot be found on the network. To set up: create an "RLTHubGateway" instance and select the ModBus gateway under "Gateway" at the top there (Serial Port → ModBus Gateway, mode RTU).')],
+                    ['type' => 'Label', 'caption' => RLT_Text::t('RTU devices cannot be found on the network. To set one up: create an "RLTHubGateway" instance and select the ModBus gateway under "Gateway" at the top there (Serial Port → ModBus Gateway, mode RTU).')],
                     ['type' => 'Label', 'caption' => $this->gatewaySummary()],
                 ],
             ],
@@ -242,8 +242,8 @@ class RLTHubDiscovery extends IPSModule
             'type' => 'ExpansionPanel', 'expanded' => false,
             'caption' => $hidden ? RLT_Text::t('🪟  Form: layout (%d hidden)', count($hidden)) : RLT_Text::t('🪟  Form: layout'),
             'items' => array_merge($hiddenLine, [
-                ['type' => 'Label', 'caption' => RLT_Text::t('Here you decide which sections are expanded when the form opens and in which order they appear. Symcon does not remember expanding and collapsing by itself, so the setting here applies every time the form opens. It takes effect after "Apply" the next time the form is opened.')],
-                ['type' => 'Label', 'caption' => RLT_Text::t('No checkbox means "default": as the module intends. The position is a number; with equal numbers the default order applies. "Hidden" removes a section from the display without it losing anything: its settings are kept and keep working. To show it again, clear the "Hidden" checkbox or click "Reset to default". If several checkboxes are set, "Hidden" wins over "Collapsed", which wins over "Expanded". The sections at the top (purpose, news, documentation) and at the bottom (feedback, about this module) stay where they are and cannot be hidden.')],
+                ['type' => 'Label', 'caption' => RLT_Text::t('Here you decide which sections are expanded when the form opens and in which order they appear. Symcon does not remember which sections you expand or collapse, so the setting here applies every time the form opens. It takes effect the next time the form is opened after you click "Apply".')],
+                ['type' => 'Label', 'caption' => RLT_Text::t('If no checkbox is set, the default applies, as intended by the module. The position is a number; with equal numbers the default order applies. "Hidden" removes a section from the display without losing anything: its settings are kept and keep working. To show it again, clear the "Hidden" checkbox or click "Reset to default". If several checkboxes are set, "Hidden" wins over "Collapsed", which wins over "Expanded". The sections at the top (purpose, news, documentation) and at the bottom (feedback, about this module) stay where they are and cannot be hidden.')],
                 [
                     'type' => 'List', 'name' => 'FormLayout', 'caption' => RLT_Text::t('Sections'), 'rowCount' => count($rows), 'add' => false, 'delete' => false,
                     'loadValuesFromConfiguration' => false,
@@ -285,7 +285,7 @@ class RLTHubDiscovery extends IPSModule
         $start = trim($start);
         $end = trim($end);
         if ($start !== '' || $end !== '') {
-            return RLT_Text::t('✏️ Own search range: %s to %s.', $start !== '' ? $start : '?', $end !== '' ? $end : '?');
+            return RLT_Text::t('✏️ Custom search range: %s to %s.', $start !== '' ? $start : '?', $end !== '' ? $end : '?');
         }
         if ($prefix !== '') {
             return RLT_Text::t('🔗 Search range: %s.1 to %s.254 (automatically from your own network).', $prefix, $prefix);
@@ -303,7 +303,7 @@ class RLTHubDiscovery extends IPSModule
         ];
         $line = RLT_Ui::line('ScanRangeLine', $this->rangeLine($prefix, $start, $end));
         if (trim($start) === '' && trim($end) === '' && $prefix !== '') {
-            return [$line, ['type' => 'ExpansionPanel', 'caption' => RLT_Text::t('Use own search range instead'), 'expanded' => false, 'items' => $fields]];
+            return [$line, ['type' => 'ExpansionPanel', 'caption' => RLT_Text::t('Use a custom search range instead'), 'expanded' => false, 'items' => $fields]];
         }
         return array_merge([$line], $fields);
     }

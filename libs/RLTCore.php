@@ -255,7 +255,7 @@ class RLT_ModbusGatewayClient implements RLT_ModbusClientInterface
     private function request(int $function, int $address, int $quantity): ?string
     {
         if ($this->noReplyStreak >= self::MAX_CONSECUTIVE_NO_REPLY) {
-            $this->lastError = RLT_Text::t('skipped (controller not answering)');
+            $this->lastError = RLT_Text::t('skipped (controller not responding)');
             return null;
         }
         $json = json_encode([
@@ -272,7 +272,7 @@ class RLT_ModbusGatewayClient implements RLT_ModbusClientInterface
         $resp = ($this->sendFn)($json);
         if (!is_string($resp) || strlen($resp) < 2) {
             $this->noReplyStreak++;
-            $this->lastError = RLT_Text::t('no answer');
+            $this->lastError = RLT_Text::t('no response');
             return null;
         }
         // Modbus-Exception (Function | 0x80): gültige Antwort, aber kein Wert.
@@ -421,7 +421,7 @@ class RLT_RobathermTrueControlDriver implements RLT_VentilationDriverInterface
             ['filterRuntimeHours',     'Operating hours, filter 1',       'F', 'RLT.Hours',   true],
             ['fan1Flow',               'Fan 1 air flow',                  'F', 'NRG.Percent', true],
             ['fan2Flow',               'Fan 2 air flow',                  'F', 'NRG.Percent', true],
-            ['faultSummary',           'General fault',                   'B', '~Alert',      false],
+            ['faultSummary',           'Collective fault',                   'B', '~Alert',      false],
             ['systemSwitch',           'System switch',                   'B', '',            false],
             ['watchdogOk',             'TrueControl watchdog acknowledged (diagnostics)', 'B', '',  false],
         ];
@@ -430,9 +430,9 @@ class RLT_RobathermTrueControlDriver implements RLT_VentilationDriverInterface
     public function getNotes(): array
     {
         return [
-            'Robatherm TrueControl: register addresses from ONE specific plant configuration (order number 102751.1). TrueControl is parameterised individually per project — addresses may differ on other plants. Check against your own Modbus data point list before productive use.',
-            'Temperatures: raw register value ÷ 10 = °C (a common assumption that is not documented by the manufacturer here, unverified). Air quality (CO) and the fan air flow factor are taken over as raw values.',
-            'Address base: the list counts from 1. Whether the wire counts from 1 as well is unconfirmed — with "automatic" the documented address is reduced by 1; on zero values or errors switch to "wire address = documented address".',
+            'Robatherm TrueControl: register addresses from ONE specific system configuration (order number 102751.1). TrueControl is parameterized individually per project — addresses may differ on other systems. Check against your own Modbus data point list before using it in production.',
+            'Temperatures: raw register value ÷ 10 = °C (a common assumption, not documented by the manufacturer for this device; unverified). Air quality (CO) and the fan air flow factor are passed through as raw values.',
+            'Address base: the list counts from 1. Whether the wire counts from 1 as well is unconfirmed — with "automatic" the documented address is reduced by 1; on zero values or errors switch to "documented address = wire address".',
             'The heat recovery efficiency is calculated from the outdoor, supply and extract air temperature, not delivered by the device.',
         ];
     }
@@ -603,9 +603,9 @@ class RLT_ProxonFwtDriver implements RLT_VentilationDriverInterface
     {
         return [
             'Proxon FWT 2.0 (Zimmermann): Modbus RTU over RS485 only (factory slave ID 41, 19200 baud, 8E1) — via Symcon\'s ModBus gateway. The register list is non-public customer documentation; only the addresses used here are stored.',
-            'Checked on 21.09.2026 on a real FWT (raw value against the display): addresses, function codes, temperatures (raw value ÷ 100), fault 0 = no fault, filter hours and operating mode are correct. The Excel number is directly the address at the gateway.',
-            'Still open: temperatures below 0 °C. The list gives no offset (the sister unit T300 uses a bias). Until a raw/display pair at sub-zero temperatures is available, values from 32768 upwards are read as negative — this is an assumption.',
-            'Fault: 0 = no fault is confirmed. Any other value in the "Stoerung" register counts as a general fault; the meaning of the codes is not documented. The FWT does not deliver fan air flow or air quality (contract fields stay empty).',
+            'Checked on 21 September 2026 on a real FWT (raw value against the display): addresses, function codes, temperatures (raw value ÷ 100), fault 0 = no fault, filter hours and operating mode are correct. The number in the Excel list is used directly as the wire address.',
+            'Still open: temperatures below 0 °C. The list gives no offset (the sister model T300 uses a bias). Until a raw/display value pair recorded below 0 °C is available, values of 32768 and above are interpreted as negative — this is an assumption.',
+            'Fault: it is confirmed that 0 means no fault. Any other value in the "Stoerung" register counts as a collective fault; the meaning of the codes is not documented. The FWT does not provide fan air flow or air quality (the corresponding contract fields stay empty).',
         ];
     }
 
@@ -737,11 +737,11 @@ class RLT_PichlerLgDriver implements RLT_VentilationDriverInterface
     public function getNotes(): array
     {
         return [
-            'Pichler LG series with ES2020 controller (e.g. LG 350): register list from the manufacturer (Modbus list ES2020, firmware v2.1.0), not yet checked on any plant. Modbus RTU (factory: 19200 baud, even parity, address 20) via RLTHubGateway; Modbus TCP from firmware 1.6 via RLTHub — Modbus TCP has to be switched on at the device first.',
-            'Temperatures: °C = (raw value − 1000) ÷ 10 according to the list, so values below 0 °C can be shown as well. The address base is unchecked: the list gives addresses but does not say whether they are addresses at the gateway. Default: list number = address at the gateway; on zero values or errors try the other choice under "Use own address base instead".',
+            'Pichler LG series with ES2020 controller (e.g. LG 350): register list from the manufacturer (Modbus list ES2020, firmware v2.1.0), not yet checked on any system. Modbus RTU (factory setting: 19200 baud, even parity, slave address 20) via RLTHubGateway; Modbus TCP from firmware 1.6 via RLTHub — Modbus TCP must first be enabled on the device.',
+            'Temperatures: °C = (raw value − 1000) ÷ 10 according to the list, so values below 0 °C can be shown as well. The address base is unchecked: the list gives addresses but does not say whether they are wire addresses. Default: list number = wire address; on zero values or errors try the other choice under "Use a custom address base instead".',
             'Filter: the list provides the time remaining until the filter change alarm, not operating hours. The contract field "Operating hours, filter" therefore stays empty; remaining time and filter alarm are available as separate variables.',
-            'Air flow: supply and extract air actual value in m³/h (with Robatherm a factor in %) — the unit is shown in the variable profile. Air quality (CO2) is missing for now: the registers exist, but it cannot be detected whether a sensor is connected.',
-            'The heat recovery efficiency is calculated from the outdoor, supply and extract air temperature. A pre-heating coil can raise the supply air temperature and make the value appear too high.',
+            'Air flow: actual supply and extract air flow in m³/h (for Robatherm, a factor in %) — the unit is defined by the variable profile. Air quality (CO2) is missing for now: the registers exist, but it cannot be detected whether a sensor is connected.',
+            'The heat recovery efficiency is calculated from the outdoor, supply and extract air temperature. A preheater coil can raise the supply air temperature and make the value appear too high.',
         ];
     }
 
@@ -827,19 +827,19 @@ class RLT_Drivers
             'class'      => 'RLT_RobathermTrueControlDriver',
             'caption'    => 'Robatherm TrueControl',
             'transports' => ['tcp'],
-            'confidence' => 'Register list of a single plant, not yet verified on hardware.',
+            'confidence' => 'Register list of a single system, not yet verified on hardware.',
         ],
         'pichler_lg' => [
             'class'      => 'RLT_PichlerLgDriver',
             'caption'    => 'Pichler LG (ES2020, e.g. LG 350)',
             'transports' => ['tcp', 'rtu'],
-            'confidence' => 'Register list from the manufacturer (public), not yet checked on any plant. Unchecked: address base and the mapping of filter (remaining time) and air flow (m³/h).',
+            'confidence' => 'Register list from the manufacturer (public), not yet checked on any system. Not yet verified: address base and the mapping of filter (remaining time) and air flow (m³/h).',
         ],
         'proxon_fwt' => [
             'class'      => 'RLT_ProxonFwtDriver',
             'caption'    => 'Proxon FWT 2.0 (Zimmermann)',
             'transports' => ['rtu'],
-            'confidence' => 'Checked on a real FWT (21.09.2026): addresses, temperatures above 0 °C, fault 0, filter hours, operating mode. Open: temperatures below 0 °C and the fault codes.',
+            'confidence' => 'Checked on a real FWT (21 September 2026): addresses, temperatures above 0 °C, fault 0, filter hours, operating mode. Still open: temperatures below 0 °C and the fault codes.',
         ],
     ];
 
@@ -935,11 +935,11 @@ trait RLT_HubTrait
         }
         $seen = (int)$this->ReadAttributeInteger('LastSeenAt');
         if ($seen === 0) {
-            return RLT_Text::t('⚠️ Connected to %s, but no valid answer received yet. "Test connection now" shows the reason.', $target);
+            return RLT_Text::t('⚠️ Connected to %s, but no valid response received yet. "Test connection now" shows the reason.', $target);
         }
         $when = RLT_Text::time($seen);
         if ($this->GetStatus() === 201) {
-            return RLT_Text::t('⚠️ Connected to %s, but the last query failed (last valid answer %s). "Test connection now" shows the reason.', $target, $when);
+            return RLT_Text::t('⚠️ Connected to %s, but the last query failed (last valid response %s). "Test connection now" shows the reason.', $target, $when);
         }
         $provided = array_column($this->rltDriver()->getBaseVars(), 0);
         $parts = [];
@@ -953,7 +953,7 @@ trait RLT_HubTrait
         if ($vid) {
             $parts[] = RLT_Text::t('Fault: %s', GetValue($vid) ? RLT_Text::t('yes') : RLT_Text::t('no'));
         }
-        return RLT_Text::t('✅ Connected to %s — last valid answer %s. Last read (source: the plant): %s.', $target, $when, $parts ? implode(', ', $parts) : RLT_Text::t('no values'));
+        return RLT_Text::t('✅ Connected to %s — last valid response %s. Last read (source: the system): %s.', $target, $when, $parts ? implode(', ', $parts) : RLT_Text::t('no values'));
     }
 
     private function rltRefreshStatusLine(): void
@@ -978,10 +978,10 @@ trait RLT_HubTrait
             return $oneBased ? RLT_Text::t('Documented address − 1 = wire address') : RLT_Text::t('Documented address = wire address');
         };
         if ($base === 'one' || $base === 'zero') {
-            return RLT_Text::t('✏️ Address base: %s (own setting; the default of the device type would be: %s)', $describe($base === 'one'), $describe($driverDefault));
+            return RLT_Text::t('✏️ Address base: %s (custom setting; the device type default would be: %s)', $describe($base === 'one'), $describe($driverDefault));
         }
         $caption = RLT_Text::t(RLT_Drivers::DRIVERS[$device]['caption'] ?? $device);
-        return RLT_Text::t('🔗 Address base: %s (automatic, default of the device type %s)', $describe($driverDefault), $caption);
+        return RLT_Text::t('🔗 Address base: %s (automatic, device type default %s)', $describe($driverDefault), $caption);
     }
 
     private function rltAddressBaseItems(string $device, string $base): array
@@ -991,7 +991,7 @@ trait RLT_HubTrait
             'name'     => 'AddressBase',
             'caption'  => RLT_Text::t('Address base of the register list'),
             'options'  => [
-                ['caption' => RLT_Text::t('automatic (default of the device type)'), 'value' => 'auto'],
+                ['caption' => RLT_Text::t('automatic (device type default)'), 'value' => 'auto'],
                 ['caption' => RLT_Text::t('Documented address − 1 = wire address (1-based list)'), 'value' => 'one'],
                 ['caption' => RLT_Text::t('Documented address = wire address'), 'value' => 'zero'],
             ],
@@ -1005,7 +1005,7 @@ trait RLT_HubTrait
                 'caption' => RLT_Text::t('Address base of the register list'),
                 'items'   => [
                     ['type' => 'Label', 'caption' => RLT_Text::t('Manufacturer lists often count registers from 1 (Modicon convention), but on the wire Modbus counts from 0. Whether the address from the list still has to be reduced by 1 depends on the device.')],
-                    ['type' => 'Label', 'caption' => RLT_Text::t('The default of the selected device type applies automatically. If the plant returns zero values, errors or obviously wrong values, you can try the other choice under "Use own address base instead" and click "Test connection now".')],
+                    ['type' => 'Label', 'caption' => RLT_Text::t('The default of the selected device type applies automatically. If the system returns zero values, errors or obviously wrong values, you can try the other choice under "Use a custom address base instead" and click "Test connection now".')],
                     ['type' => 'Label', 'caption' => RLT_Text::t('Whether the default of a device type is correct is stated in the panel "Documentation & help".')],
                 ],
             ],
@@ -1017,7 +1017,7 @@ trait RLT_HubTrait
         return [
             $line,
             $help,
-            ['type' => 'ExpansionPanel', 'caption' => RLT_Text::t('Use own address base instead'), 'expanded' => false, 'items' => [$select]],
+            ['type' => 'ExpansionPanel', 'caption' => RLT_Text::t('Use a custom address base instead'), 'expanded' => false, 'items' => [$select]],
         ];
     }
 
@@ -1058,13 +1058,13 @@ trait RLT_HubTrait
         $version = (is_array($libraryInfo) && isset($libraryInfo['version'])) ? (string)$libraryInfo['version'] : '?';
 
         $transportNote = static::TRANSPORT === 'rtu'
-            ? RLT_Text::t('RS485/Modbus RTU runs via Symcon\'s ModBus gateway (Serial Port → ModBus Gateway → this instance). This also applies to the built-in RS485 port of a Symbox — it is not an external gateway and can only be reached this way. You connect plants with Modbus TCP using the RLTHub module.')
-            : RLT_Text::t('This instance speaks Modbus TCP. An external RTU→TCP converter (e.g. for RS485 devices) works with it as well. The built-in RS485 port of a Symbox, however, is not an external gateway — the RLTHubGateway module exists for that.');
+            ? RLT_Text::t('RS485/Modbus RTU runs via Symcon\'s ModBus gateway (Serial Port → ModBus Gateway → this instance). This also applies to the built-in RS485 port of a Symbox — it is not an external gateway and can only be reached this way. You connect systems with Modbus TCP using RLTHub.')
+            : RLT_Text::t('This instance uses Modbus TCP. An external RTU→TCP converter (e.g. for RS485 devices) works with it as well. The built-in RS485 port of a Symbox, however, is not an external gateway — the RLTHubGateway module exists for that.');
 
         $fach = [
             ['type' => 'CheckBox', 'name' => 'Active', 'caption' => RLT_Text::t('Communication active')],
             ['type' => 'ValidationTextBox', 'name' => 'Location', 'caption' => RLT_Text::t('Name / location (optional)')],
-            ['type' => 'Label', 'caption' => RLT_Text::t('ℹ️ The preselected device type is only the first entry of the list — please choose the one that matches your own plant.')],
+            ['type' => 'Label', 'caption' => RLT_Text::t('ℹ️ The preselected device type is only the first entry of the list — please choose the one that matches your own system.')],
             [
                 'type'     => 'Select',
                 'name'     => 'Device',
@@ -1096,7 +1096,7 @@ trait RLT_HubTrait
             'expanded' => false,
             'items'    => array_merge([
                 ['type' => 'Label', 'caption' => RLT_Text::t('%s version %s — verification status per device type: see below.', static::MODULE_NAME, $version)],
-                ['type' => 'Label', 'caption' => RLT_Text::t('Provides the NRG-Stack contract Type=>\'ventilation\' (contractVersion 1.0, agreed with EMS). Read-only — the module does not control the plant.')],
+                ['type' => 'Label', 'caption' => RLT_Text::t('Provides the NRG-Stack contract Type=>\'ventilation\' (contractVersion 1.0, agreed with the EMS). Read-only — the module does not control the system.')],
                 ['type' => 'Label', 'caption' => $transportNote],
                 ['type' => 'Label', 'caption' => RLT_Text::t('If a query fails, the instance status shows "Connection error" and a single message appears in the Symcon log. "Test connection now" shows the reason.')],
             ], $notes),
@@ -1167,7 +1167,7 @@ trait RLT_HubTrait
         $this->SetStatus(201);
         // Dauerhaft loggen, aber nur beim Übergang — nicht bei jedem Takt.
         if ($previous !== 201) {
-            $this->LogMessage(RLT_Text::t('Plant not reachable or no valid answer%s.', $this->rltFailureReason($mb)), KL_WARNING);
+            $this->LogMessage(RLT_Text::t('System not reachable or no valid response%s.', $this->rltFailureReason($mb)), KL_WARNING);
         }
     }
 
@@ -1196,7 +1196,7 @@ trait RLT_HubTrait
             return RLT_Text::t('✅ Connection successful, values updated.');
         }
         $this->SetStatus(201);
-        return RLT_Text::t('❌ Connection failed or no valid answer%s — check the connection, address base and device type.', $this->rltFailureReason($mb));
+        return RLT_Text::t('❌ Connection failed or no valid response%s — check the connection, address base and device type.', $this->rltFailureReason($mb));
     }
 
     // -----------------------------------------------------------------------

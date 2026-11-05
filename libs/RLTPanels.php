@@ -92,10 +92,10 @@ trait RLT_PanelTrait
         }
         $items = [];
         if (static::FORUM_THREAD_URL !== '') {
-            $items[] = ['type' => 'Label', 'caption' => RLT_Text::t('%s is in beta — feedback is explicitly welcome in the community thread.', static::MODULE_NAME)];
+            $items[] = ['type' => 'Label', 'caption' => RLT_Text::t('%s is in beta — feedback is very welcome in the community thread.', static::MODULE_NAME)];
             $items[] = ['type' => 'Button', 'caption' => RLT_Text::t('To the forum thread'), 'onClick' => "echo '" . static::FORUM_THREAD_URL . "';", 'link' => true];
         } else {
-            $items[] = ['type' => 'Label', 'caption' => RLT_Text::t('%s is in beta — feedback is explicitly welcome. The thread in the Symcon forum is still to be created; the link will appear here as soon as it exists.', static::MODULE_NAME)];
+            $items[] = ['type' => 'Label', 'caption' => RLT_Text::t('%s is in beta — feedback is very welcome. The Symcon forum thread has not been created yet; the link will appear here once it exists.', static::MODULE_NAME)];
         }
         $items[] = ['type' => 'Button', 'caption' => RLT_Text::t('Understood – do not show again'), 'onClick' => static::PREFIX . '_AckForumHint($id);'];
         return [
