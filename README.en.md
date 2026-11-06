@@ -1,7 +1,7 @@
 # NRG-Stack RLTHub
 
 ![Symcon](https://img.shields.io/badge/Symcon-PHPModul-blue)
-![Module version](https://img.shields.io/badge/Modul_Version-0.5.0-blue)
+![Module version](https://img.shields.io/badge/Modul_Version-0.5.1-blue)
 ![Symcon version](https://img.shields.io/badge/Symcon_Version-9.0%2B-blue)
 ![License](https://img.shields.io/badge/License-PolyForm_Noncommercial_1.0.0-lightgrey)
 [![Check Style](https://github.com/DG65/NRGRLTHub/actions/workflows/check-style.yml/badge.svg)](https://github.com/DG65/NRGRLTHub/actions/workflows/check-style.yml)
@@ -15,7 +15,7 @@ manufacturer — in the same spirit as [NRGMeterHub](https://github.com/DG65/NRG
 
 ## Status
 
-**0.5.0 (beta).** Proxon FWT 2.0 has been checked on a real plant (temperatures above 0 °C, fault 0, filter
+**0.5.1 (beta).** Proxon FWT 2.0 has been checked on a real plant (temperatures above 0 °C, fault 0, filter
 hours, operating mode); Robatherm TrueControl has not been checked on any plant yet. The tests additionally run
 against test Modbus servers and a replica of IPSModule; the verification status per device type is shown in the
 form and in the source code. The module is bilingual (German/English) and follows the Symcon language.

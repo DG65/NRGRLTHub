@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.1 (06.11.2026)
+
+- **Store-Review-Punkte 27 und 5 (SUITE.md):** Der Abgleich des Ausblende-Stands mit Geschwister-Instanzen läuft nicht mehr in `ApplyChanges()` (beim Neuladen von Modulen können die anderen Instanzen noch fehlen), sondern beim Öffnen des Formulars. Die eigenen Variablenprofile (`RLT.Ppm`, `RLT.Hours`, `RLT.Flow`) werden nur noch beim Anlegen eingestellt, nicht bei jedem Übernehmen. Keine sichtbare Änderung für Nutzer, deshalb kein Eintrag im Neu-Panel.
+
 ## 0.5.0 (05.11.2026)
 
 - **Zweisprachig (Deutsch/Englisch).** Formular, Statusmeldungen, Hinweise, Log- und Verbindungstesttexte, Herstellerhinweise, Variablennamen und das Neu-Panel folgen jetzt der Symcon-Sprache. Quelltexte sind englisch, die deutsche Fassung steht in `libs/locale.json`; `php .tools/locale-bauen.php` kopiert sie in die drei Modulordner (Symcon liest `locale.json` nur dort). Englische Dokumentation: `README.en.md`.

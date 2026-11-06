@@ -71,7 +71,6 @@ class RLTHubDiscovery extends IPSModule
     public function ApplyChanges()
     {
         parent::ApplyChanges();
-        $this->rltAdoptDismissFromSibling();
     }
 
     // Eine Zeile: Symbol, Kernzahl, Zeitstempel der letzten Suche.
@@ -88,6 +87,8 @@ class RLTHubDiscovery extends IPSModule
 
     public function GetConfigurationForm()
     {
+        // Abgleich mit Geschwister-Instanzen hier, nicht in ApplyChanges (beim Neuladen evtl. noch nicht geladen).
+        $this->rltAdoptDismissFromSibling();
         $prefix = $this->guessLocalSubnetPrefix();
 
         $rows = json_decode((string)$this->ReadAttributeString('ResultsJSON'), true);

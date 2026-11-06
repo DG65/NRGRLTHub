@@ -891,7 +891,6 @@ trait RLT_HubTrait
 
     protected function rltApply(): void
     {
-        $this->rltAdoptDismissFromSibling();
         $this->rltCreateProfiles();
 
         $pos = 0;
@@ -1042,6 +1041,8 @@ trait RLT_HubTrait
 
     public function GetConfigurationForm()
     {
+        // Abgleich mit Geschwister-Instanzen hier, nicht in ApplyChanges (beim Neuladen evtl. noch nicht geladen).
+        $this->rltAdoptDismissFromSibling();
         $options = [];
         foreach (RLT_Drivers::DRIVERS as $key => $def) {
             if (in_array(static::TRANSPORT, $def['transports'], true)) {
@@ -1334,9 +1335,9 @@ trait RLT_HubTrait
         foreach ([['RLT.Ppm', ' ppm', 0], ['RLT.Hours', ' h', 0], ['RLT.Flow', ' m³/h', 0]] as [$name, $suffix, $digits]) {
             if (!IPS_VariableProfileExists($name)) {
                 IPS_CreateVariableProfile($name, VARIABLETYPE_FLOAT);
+                IPS_SetVariableProfileDigits($name, $digits);
+                IPS_SetVariableProfileText($name, '', $suffix);
             }
-            IPS_SetVariableProfileDigits($name, $digits);
-            IPS_SetVariableProfileText($name, '', $suffix);
         }
     }
 }

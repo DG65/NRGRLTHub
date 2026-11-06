@@ -564,10 +564,12 @@ check("Bestätigen wird an die Geschwister-Instanz desselben Typs weitergegeben"
 check("… aber NICHT an ein anderes Modul (RLTHubGateway behält alle drei Panels)", count(array_intersect($names($c), ['PurposeIntroPanel', 'NewsPanel', 'ForumHintPanel'])) === 3);
 $d = new RLTHub(923); $d->Create(); $GLOBALS['RLT_INSTANCES'][923] = ['module' => RLTHub::MODULE_GUID, 'props' => []];
 $d->ApplyChanges();
-check("neu angelegte Instanz übernimmt beim ersten ApplyChanges den Ausblenden-Stand einer Geschwister-Instanz", array_intersect($names($d), ['PurposeIntroPanel', 'NewsPanel', 'ForumHintPanel']) === []);
+check("neu angelegte Instanz übernimmt beim ersten Öffnen des Formulars (nicht in ApplyChanges, SUITE.md Punkt 27) den Ausblenden-Stand einer Geschwister-Instanz", array_intersect($names($d), ['PurposeIntroPanel', 'NewsPanel', 'ForumHintPanel']) === []);
 $e1 = new RLTHub(924); $e1->Create(); $GLOBALS['RLT_INSTANCES'][924] = ['module' => RLTHub::MODULE_GUID, 'props' => []];
 $e1->attrs['SeenNews'] = '0.0.1';
 $e1->ApplyChanges();
+check("Abgleich mit Geschwister-Instanzen läuft nicht in ApplyChanges (SUITE.md Punkt 27)", $e1->ReadAttributeString('SeenNews') === '0.0.1');
+$e1->GetConfigurationForm();
 check("Ping-Pong strukturell ausgeschlossen: AdoptDismissState propagiert nicht weiter (kein Endlosaufruf, Stand konsistent)", $e1->ReadAttributeString('SeenNews') === RLTHub::NEWS_VERSION);
 unset($GLOBALS['RLT_INSTANCES'][920], $GLOBALS['RLT_INSTANCES'][921], $GLOBALS['RLT_INSTANCES'][922], $GLOBALS['RLT_INSTANCES'][923], $GLOBALS['RLT_INSTANCES'][924]);
 
@@ -995,7 +997,7 @@ $resetText = $flo->ResetFormLayout();
 $upd = array_values(array_filter($flo->formUpdates, fn($u) => $u[0] === 'FormLayout' && $u[1] === 'values'));
 $resetRows = isset($upd[0]) ? json_decode($upd[0][2], true) : [];
 check('Aufbau: Zurücksetzen schreibt per UpdateFormField den Standard, gibt Klartext zurück und speichert nichts', count($resetRows) === 3 && $resetRows[0]['Key'] === 'suche' && !$resetRows[0]['Hidden'] && strpos($resetText, 'Übernehmen') !== false && $flo->props['FormLayout'] === 'kein json');
-check('Aufbau: Neu-Panel kündigt es an, NEWS_VERSION = Bibliotheksversion', strpos(implode(' ', array_map([RLT_Text::class, 't'], RLTHubDiscovery::NEWS)), 'Formular-Aufbau') !== false && RLTHubDiscovery::NEWS_VERSION === json_decode(file_get_contents(dirname(__DIR__) . '/library.json'), true)['version']);
+check('Aufbau: Neu-Panel kündigt es an, NEWS_VERSION nicht über der Bibliotheksversion', strpos(implode(' ', array_map([RLT_Text::class, 't'], RLTHubDiscovery::NEWS)), 'Formular-Aufbau') !== false && version_compare(RLTHubDiscovery::NEWS_VERSION, json_decode(file_get_contents(dirname(__DIR__) . '/library.json'), true)['version'], '<='));
 $noA = new RLTHub(4102); $noA->Create(); $noB = new RLTHubGateway(4103); $noB->Create();
 check('Aufbau: RLTHub und RLTHubGateway haben nur ein Fachpanel und kein Aufbau-Panel', strpos($noA->GetConfigurationForm(), 'Formular: Aufbau') === false && strpos($noB->GetConfigurationForm(), 'Formular: Aufbau') === false);
 
