@@ -168,6 +168,7 @@ function startServer(string $mode, array $map = []): array
 $srv = stream_socket_server("tcp://127.0.0.1:$port", $e, $es);
 if (!$srv) { exit(1); }
 file_put_contents($cnt, '0');
+$sel = '';
 $rx = function ($c, $n) { $b = ''; while (strlen($b) < $n) { $x = fread($c, $n - strlen($b)); if ($x === false || $x === '') { return null; } $b .= $x; } return $b; };
 while ($c = @stream_socket_accept($srv, 30)) {
     while (true) {
@@ -194,6 +195,20 @@ while ($c = @stream_socket_accept($srv, 30)) {
         } elseif (($fc === 3 || $fc === 4) && $mode === 'zeros') {
             $data = str_repeat("\x00\x00", $a['count']);
             $resp = chr($fc) . chr(strlen($data)) . $data;
+        } elseif ($fc === 16 && $mode === 'helios') {
+            $data = substr($pdu, 6, ord($pdu[5]));
+            $nul = strpos($data, "\0");
+            $sel = $nul === false ? $data : substr($data, 0, $nul);
+            file_put_contents($cnt, "\nW:" . $sel . '@' . $a['start'], FILE_APPEND);
+            $resp = chr(16) . pack('nn', $a['start'], $a['count']);
+        } elseif ($fc === 3 && $mode === 'helios') {
+            if ($a['count'] < 4 || $a['start'] !== 1) {
+                $resp = chr(0x83) . chr(2);
+            } else {
+                $text = $sel . '=' . ($map[$sel] ?? '') . "\0";
+                $text = str_pad(substr($text, 0, $a['count'] * 2), $a['count'] * 2, "\0");
+                $resp = chr(3) . chr(strlen($text)) . $text;
+            }
         } elseif ($fc === 1) {
             $resp = chr($fc) . chr(1) . chr(0b00000101);
         } else {
@@ -206,7 +221,7 @@ while ($c = @stream_socket_accept($srv, 30)) {
 PHP;
     $proc = proc_open([PHP_BINARY, '-r', $code, (string)$port, $cnt, $mode, json_encode($map)], [], $pipes);
     for ($i = 0; $i < 50; $i++) {
-        if (@file_get_contents($cnt) === '0') { break; }
+        if (strpos((string)@file_get_contents($cnt), '0') === 0) { break; }
         usleep(100000);
     }
     return [$proc, $port, $cnt];
@@ -384,6 +399,55 @@ $hnotes = implode(' ', array_map([RLT_Text::class, 't'], $hd->getNotes()));
 check('Helios: Hinweise nennen Drittquelle, ungeprüfte Adress-Basis, Drehzahl statt Volumenstrom, fehlende Störung/Filter und das nicht abgedeckte Netzwerk-Gateway', strpos($hnotes, 'Abschrift') !== false && strpos($hnotes, 'Adress-Basis') !== false && strpos($hnotes, 'Drehzahl') !== false && strpos($hnotes, 'Störungsregister') !== false && strpos($hnotes, 'Netzwerk-Gateway') !== false);
 check('Helios: Vertrauensangabe nennt Drittquelle und fehlende Verifikation', strpos(RLT_Text::t(RLT_Drivers::DRIVERS['helios_easycontrols']['confidence']), 'Dritten') !== false && strpos(RLT_Text::t(RLT_Drivers::DRIVERS['helios_easycontrols']['confidence']), 'noch nicht') !== false);
 
+echo "4d) Helios Netzwerk-Gateway (Variablenprotokoll, Port 502/Unit-ID 180, Herstellerdokument)\n";
+$hs = startServer('helios', ['v00104' => '-3.5', 'v00105' => '19.0', 'v00106' => '2.0', 'v00107' => '22.5', 'v00103' => '45', 'v00102' => '2', 'v00101' => '0', 'v01300' => '0', 'v01033' => '9000']);
+$hc = new RLT_ModbusTcpClient('127.0.0.1', $hs[1], 180);
+check('Client: readVariable liefert den Wert hinter dem „=“ (Außenluft -3,5)', $hc->readVariable('v00104', 8) === '-3.5');
+check('Client: Schreibzugriff nur mit dem reinen Namen ab Registeradresse 1, nie ein Wert', strpos((string)file_get_contents($hs[2]), "\nW:v00104@1") !== false && strpos((string)file_get_contents($hs[2]), '=') === false, (string)file_get_contents($hs[2]));
+check('Client: unbekannte Variable liefert leeren Wert, kein Absturz', $hc->readVariable('v00999', 6) === '');
+check('Client: Name mit Wert („=“), falsches Format oder Schreibversuch wird gar nicht gesendet', $hc->readVariable('v00104=5', 8) === null && $hc->readVariable('v104', 8) === null && $hc->readVariable('v0010400', 8) === null && $hc->readVariable('x00104', 8) === null && strpos((string)file_get_contents($hs[2]), 'v00104=') === false);
+check('Client: mit der Registerzahl der Variablenliste (6) kommt der volle Wert, bei zu wenigen Registern wird der Wert wie im Dokument abgeschnitten und count < 4 auf 4 angehoben (keine Server-Exception)', $hc->readVariable('v00103', 6) === '45' && $hc->readVariable('v00103', 1) === '4');
+$hdrv = new RLT_HeliosGatewayDriver();
+$hhub = new FakeHub(false);
+check('Helios-Gateway: Zyklus gegen den echten Test-Server ok', $hdrv->readValues($hc, $hhub) === true);
+check('Helios-Gateway: Temperaturen Außen -3,5, Zu 19, Fort 2, Ab 22,5', abs($hhub->vars['outsideTemp'] + 3.5) < 1e-9 && abs($hhub->vars['supplyTemp'] - 19.0) < 1e-9 && abs($hhub->vars['exhaustTemp'] - 2.0) < 1e-9 && abs($hhub->vars['extractTemp'] - 22.5) < 1e-9, json_encode($hhub->vars));
+check('Helios-Gateway: Wirkungsgrad (19+3,5)/(22,5+3,5) = 86,5 %', abs($hhub->vars['heatRecoveryEfficiency'] - 86.538) < 0.01, (string)$hhub->vars['heatRecoveryEfficiency']);
+check('Helios-Gateway: Drehzahl 45 %, Stufe 2, Automatik, keine Störung, Filter-Restzeit 150 h', $hhub->vars['fan1Flow'] === 45.0 && $hhub->vars['fanStage'] === 2 && $hhub->vars['manualMode'] === false && $hhub->vars['faultSummary'] === false && $hhub->vars['filterHoursRemaining'] === 150.0, json_encode($hhub->vars));
+$wlog = (string)file_get_contents($hs[2]);
+check('Helios-Gateway: über alle Abfragen wurde nie ein Wert geschrieben (kein „=“ in den Schreibzugriffen)', strpos($wlog, '=') === false && substr_count($wlog, "\nW:") >= 9, $wlog);
+$hc->close();
+stopServer($hs);
+
+$hs2 = startServer('helios', ['v00104' => '-', 'v00105' => '19.0', 'v00106' => '2.0', 'v00107' => '22.5', 'v01300' => '3', 'v00103' => 'x']);
+$hc2 = new RLT_ModbusTcpClient('127.0.0.1', $hs2[1], 180);
+$hh2 = new FakeHub(false);
+check('Helios-Gateway: „-“ (kein Außenfühler) wird nicht geschrieben, Text ist keine Zahl, 3 Fehler = Sammelstörung', $hdrv->readValues($hc2, $hh2) === true && !isset($hh2->vars['outsideTemp']) && !isset($hh2->vars['heatRecoveryEfficiency']) && !isset($hh2->vars['fan1Flow']) && $hh2->vars['faultSummary'] === true);
+$hc2->close();
+stopServer($hs2);
+$silent = new class implements RLT_ModbusClientInterface {
+    public $n = 0;
+    public function readHolding($a, $c) { return null; }
+    public function readInput($a, $c) { return null; }
+    public function readCoils($a, $c) { return null; }
+    public function close(): void {}
+    public function readVariable(string $name, int $count): ?string { $this->n++; return null; }
+};
+check('Helios-Gateway: stummes Gerät: nach 2 Fehlversuchen wird der Zyklus abgebrochen, Ergebnis Fehler', $hdrv->readValues($silent, new FakeHub(false)) === false && $silent->n === 2, (string)$silent->n);
+check('Helios-Gateway: Client ohne Variablenprotokoll (z. B. Modbus-Gateway/RTU) -> Fehler statt Absturz', $hdrv->readValues(new FakeModbus(), new FakeHub(false)) === false);
+check('Helios-Gateway: nicht über die Netzwerksuche auffindbar (probe schreibt nie auf unbekannten Geräten)', $hdrv->probe(new FakeModbus()) === null && $hdrv->probe($silent) === null && $silent->n === 2);
+check('Helios-Gateway: Gerätetyp nur TCP, feste Verbindung 502/180', RLT_Drivers::DRIVERS['helios_gateway']['transports'] === ['tcp'] && $hdrv->fixedConnection() === ['port' => 502, 'unitId' => 180]);
+check('Helios-Gateway: keine Variablen für Filterwarnung und CO2 (Bedeutung/Fühler nicht belegt)', !in_array('filterAlarm', array_column($hdrv->getBaseVars(), 0), true) && !in_array('co2', array_column($hdrv->getBaseVars(), 0), true));
+class RealClientHub extends RLTHub
+{
+    public function clientInfo(): array { $c = $this->rltClient(); return [$c->port, $c->unitId, $this->rltConnectionTarget()]; }
+}
+$rh = new RealClientHub(960); $rh->Create(); $rh->props['Host'] = '192.0.2.5'; $rh->props['Port'] = 1502; $rh->props['UnitId'] = 7;
+check('Hub: Standardgerät nutzt die Formularwerte für Port und Unit-ID', $rh->clientInfo()[0] === 1502 && $rh->clientInfo()[1] === 7);
+$rh2 = new RealClientHub(961); $rh2->Create(); $rh2->props['Host'] = '192.0.2.5'; $rh2->props['Port'] = 1502; $rh2->props['UnitId'] = 7; $rh2->props['Device'] = 'helios_gateway';
+check('Hub: Helios-Gateway erzwingt Port 502 und Unit-ID 180, Verbindungsziel zeigt die wirksamen Werte', $rh2->clientInfo()[0] === 502 && $rh2->clientInfo()[1] === 180 && strpos($rh2->clientInfo()[2], '192.0.2.5:502') === 0 && strpos($rh2->clientInfo()[2], '180') !== false, json_encode($rh2->clientInfo()));
+$hnotes2 = implode(' ', array_map([RLT_Text::class, 't'], $hdrv->getNotes()));
+check('Helios-Gateway: Hinweise nennen Port/Unit-ID 180, nur lesend, Variablen, nicht abgebildete Punkte, Intervall', strpos($hnotes2, 'Unit-ID 180') !== false && strpos($hnotes2, 'rein lesend') !== false && strpos($hnotes2, 'Variablen') !== false && strpos($hnotes2, 'Filterwechsel') !== false && strpos($hnotes2, '30 Sekunden') !== false);
+
 echo "5) RLTHub (TCP) gegen den IPSModule-Nachbau: Variablen, Zyklus, Vertrag, Formular\n";
 class TestHub extends RLTHub
 {
@@ -422,7 +486,7 @@ check('WireAddress one: Doku − 1', $hubm->WireAddress(2001) === 2000);
 $form = json_decode($hubm->GetConfigurationForm(), true);
 $deviceOpts = null;
 foreach ($form['elements'] as $e) { if (($e['name'] ?? '') === 'Device') { $deviceOpts = array_column($e['options'], 'value'); } }
-check('Formular: TCP-Modul bietet nur TCP-Treiber an', $deviceOpts === ['robatherm_truecontrol', 'pichler_lg'], json_encode($deviceOpts));
+check('Formular: TCP-Modul bietet nur TCP-Treiber an', $deviceOpts === ['robatherm_truecontrol', 'pichler_lg', 'helios_gateway'], json_encode($deviceOpts));
 check('Formular: onChange nutzt das Modulpräfix', strpos($hubm->GetConfigurationForm(), 'RLT_OnChangeDevice') !== false);
 
 echo "6) RLTHubGateway: Parent-Erkennung, Zyklus über das Gateway\n";

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0 (22.11.2026)
+
+- **Neuer Gerätetyp: Helios KWL easyControls über das Netzwerk-Gateway** (RLTHub, Modbus TCP). Das Gateway arbeitet nicht mit Registeradressen, sondern mit Variablen („vXXXXX“, Herstellerdokument „Modbus Gateway TCP/IP – easyControls“, ab Gerätesoftware 2.01): Der Name wird ab Registeradresse 1 geschrieben, danach liefert das Lesen ab Adresse 1 „vXXXXX=Wert“. Das ist die Anbindung, die vermutlich auch das nicht mehr gepflegte Helios-Modul der Community nutzte; kein Code daraus übernommen (GPL-3.0), Neubau nach dem Herstellerdokument. Port 502 und Unit-ID 180 sind laut Hersteller fest und werden für diesen Gerätetyp erzwungen (die Formularwerte gelten nicht).
+- **Rein lesend:** `RLT_ModbusTcpClient::readVariable()` schreibt ausschließlich reine Namen (`^v\d{5}$`, nie ein „=“) zur Auswahl der Variable, nie einen Wert. Deshalb ist der Typ **nicht** über die Netzwerksuche auffindbar: die Suche schreibt auf unbekannten Geräten nie etwas, `probe()` liefert immer null. Die Antwort muss mit dem angefragten Namen beginnen, sonst zählt sie nicht.
+- **Werte:** Außen-, Zu-, Ab- und Fortlufttemperatur (v00104–v00107, „-“ = kein Fühler), berechneter Wirkungsgrad der Wärmerückgewinnung, Lüfterdrehzahl in % (v00103, Vertragsfeld `fan1FlowID`, `fanFlowUnit` `'%'`), Lüfterstufe (v00102), Handbetrieb (v00101), Sammelstörung (Anzahl Fehler v01300 > 0) und Restlaufzeit bis zum Filterwechsel (v01033, min → h).
+- **Bewusst nicht abgebildet:** v01031 „Filterwechsel“ (Lese-/Schreibwert Nein/Ja; das Dokument erklärt nicht, ob es Warnung oder Quittierung ist), deshalb bleibt `filterWarningID` leer; CO2, VOC und Feuchte der externen Fühler.
+- **Grenzen:** An keinem Gerät geprüft (auch Zeitverhalten nicht: jede Variable braucht zwei Modbus-Zugriffe, ein Zyklus dauert einige Sekunden, Abfrageintervall mindestens 30 Sekunden empfohlen). Neu-Panel von RLTHub zeigt die Neuerung (`NEWS_VERSION` 0.7.0).
+- Prüfstand: Block 4d mit einem echten Test-Server für das Variablenprotokoll (Schreibzugriffe protokolliert, nie ein Wert), Ausfälle, „-“-Werte, stummes Gerät, erzwungene Verbindung.
+
 ## 0.6.0 (22.11.2026)
 
 - **Neuer Gerätetyp: Helios KWL easyControls 3.0 über Modbus RTU** (RLTHubGateway). Beauftragt, um die Nutzer des nicht mehr gepflegten Helios-Moduls aufzufangen; kein Code aus dem Altmodul (GPL-3.0), Neubau nach der Registerliste. Liefert Außen-, Zu-, Ab- und Fortlufttemperatur (Centi-Kelvin, Minusgrade möglich), berechneten Wirkungsgrad der Wärmerückgewinnung, Lüfterdrehzahl in % (Vertragsfeld `fan1FlowID`, `fanFlowUnit` `'%'`), Profil Zuhause/Abwesend sowie Bypass- und Abtaustatus. Alle Register sind Holding-Register (Funktion 3).

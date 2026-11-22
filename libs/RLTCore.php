@@ -177,6 +177,52 @@ class RLT_ModbusTcpClient implements RLT_ModbusClientInterface
         return $buf;
     }
 
+    /**
+     * Variablenprotokoll des Helios-Netzwerk-Gateways (Port 502, Unit-ID 180): ein Name „vXXXXX“ wird als
+     * ASCII (NUL-terminiert, 16-Bit-Blöcke) ab Registeradresse 1 geschrieben, danach liefert das Lesen ab
+     * Adresse 1 „vXXXXX=Wert“ + NUL. Das Schreiben dient NUR der Auswahl der zu lesenden Variable: es werden
+     * ausschließlich reine Namen (^v\d{5}$, nie ein „=“) geschrieben, also nie ein Wert gesetzt.
+     * Gibt den Wert hinter dem „=“ zurück oder null. Die Antwort muss mit dem angefragten Namen beginnen,
+     * sonst zählt sie nicht (verspätete oder fremde Antwort).
+     */
+    public function readVariable(string $name, int $count): ?string
+    {
+        if (!preg_match('/^v\d{5}$/', $name)) {
+            $this->lastError = 'frame';
+            return null;
+        }
+        $count = max(4, min(100, $count));
+        $req = $name . "\0";
+        if (strlen($req) % 2 === 1) {
+            $req .= "\0";
+        }
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            $ack = $this->transact(pack('Cnnc', 0x10, 1, intdiv(strlen($req), 2), strlen($req)) . $req);
+            if ($ack === null || strlen($ack) < 5 || ord($ack[0]) !== 0x10) {
+                if ($ack !== null) {
+                    return null;
+                }
+                continue;
+            }
+            $regs = $this->modbusReadRegisters(0x03, 1, $count);
+            if ($regs === null) {
+                continue;
+            }
+            $text = '';
+            foreach ($regs as $r) {
+                $text .= chr(($r >> 8) & 0xFF) . chr($r & 0xFF);
+            }
+            $end = strpos($text, "\0");
+            if ($end !== false) {
+                $text = substr($text, 0, $end);
+            }
+            if (strpos($text, $name . '=') === 0) {
+                return substr($text, strlen($name) + 1);
+            }
+        }
+        return null;
+    }
+
     private function modbusReadRegisters($fc, $startReg, $count)
     {
         $pdu = $this->transact(pack('Cnn', $fc, $startReg, $count));
@@ -965,6 +1011,162 @@ class RLT_HeliosEasyControlsDriver implements RLT_VentilationDriverInterface
     }
 }
 
+// ===========================================================================
+// RLT_HeliosGatewayDriver — Helios KWL easyControls über das Netzwerk-Gateway
+// (Modbus TCP, fest Port 502 und Unit-ID 180), „Variablenprotokoll“.
+//
+// Quelle: Herstellerdokument „Funktions- und Schnittstellenbeschreibung Modbus
+// Gateway TCP/IP – easyControls“ von easycontrols.net (liegt vor und ist die
+// Grundlage; gilt laut Dokument ab Gerätesoftware 2.01). Statt Registeradressen
+// gibt es Variablen „vXXXXX“: Der Name wird ab Registeradresse 1 geschrieben
+// (ASCII, NUL-terminiert), danach liefert das Lesen ab Adresse 1 „vXXXXX=Wert“.
+// Alle Zugriffe nur auf Holding-Register. Das Schreiben wählt nur die Variable
+// aus (RLT_ModbusTcpClient::readVariable schreibt ausschließlich reine Namen,
+// nie einen Wert) — das Modul bleibt rein lesend.
+//
+// Zuordnung (jeweils als Zeile der Variablenliste belegt):
+//  v00104 Außenluft, v00105 Zuluft, v00106 Fortluft, v00107 Abluft (°C, „.1f“,
+//  „-“ = kein Sensor), v00103 prozentuale Lüfteransteuerung (%), v00102
+//  Lüfterstufe (0–4), v00101 Betriebsart (0 Automatik, 1 Handbetrieb), v01300
+//  Anzahl der Fehler (> 0 = Sammelstörung), v01033 Restlaufzeit Filter (min).
+//
+// Bewusst nicht abgebildet: v01031 „Filterwechsel“ (Lese-/Schreibwert Nein/Ja,
+// Bedeutung im Dokument nicht erklärt: Warnung oder Quittierung?) — deshalb
+// bleibt filterWarningID leer. CO2/Feuchte (externe Fühler, „-“ = keiner
+// angeschlossen) sind nicht abgebildet, die Variablen stehen fest.
+//
+// ⚠️ Noch an KEINEM Gerät geprüft, auch das Netz-Verhalten (Zeitverhalten,
+// Mehrfachabfragen) nicht. Nicht auffindbar über die Suche: das Protokoll
+// braucht einen Schreibzugriff auf ein Anforderungsregister, den die rein
+// lesende Suche nie auf unbekannten Geräten ausführt.
+// ===========================================================================
+class RLT_HeliosGatewayDriver implements RLT_VentilationDriverInterface
+{
+    private const VAR_MODE        = ['v00101', 5];
+    private const VAR_STAGE       = ['v00102', 5];
+    private const VAR_PERCENT     = ['v00103', 6];
+    private const VAR_OUTSIDE     = ['v00104', 8];
+    private const VAR_SUPPLY      = ['v00105', 8];
+    private const VAR_EXHAUST     = ['v00106', 8];
+    private const VAR_EXTRACT     = ['v00107', 8];
+    private const VAR_FILTER_MIN  = ['v01033', 9];
+    private const VAR_ERRORS      = ['v01300', 5];
+
+    public function addressOneBasedDefault(): bool
+    {
+        return false;
+    }
+
+    /** Das Gateway antwortet laut Hersteller nur an Port 502 und Unit-ID 180; die Formularwerte gelten hier nicht. */
+    public function fixedConnection(): array
+    {
+        return ['port' => 502, 'unitId' => 180];
+    }
+
+    public function getBaseVars(): array
+    {
+        return [
+            ['outsideTemp',            'Outdoor air temperature',          'F', 'NRG.Celsius', true],
+            ['supplyTemp',             'Supply air temperature',           'F', 'NRG.Celsius', true],
+            ['extractTemp',            'Extract air temperature',          'F', 'NRG.Celsius', true],
+            ['exhaustTemp',            'Exhaust air temperature',          'F', 'NRG.Celsius', true],
+            ['heatRecoveryEfficiency', 'Heat recovery efficiency (calculated)', 'F', 'NRG.Percent', true],
+            ['fan1Flow',               'Fan speed',                        'F', 'NRG.Percent', true],
+            ['fanStage',               'Fan stage',                        'I', '',            false],
+            ['manualMode',             'Manual mode',                      'B', '',            false],
+            ['faultSummary',           'Collective fault signal',          'B', '~Alert',      false],
+            ['filterHoursRemaining',   'Time remaining until filter change', 'F', 'RLT.Hours', false],
+        ];
+    }
+
+    public function getNotes(): array
+    {
+        return [
+            'Helios KWL easyControls via the network gateway (Modbus TCP): based on the Helios document "Modbus Gateway TCP/IP – easyControls" (device software 2.01 or later), not yet checked on any device. The gateway only answers on TCP port 502 and unit ID 180 — the values entered in the form are ignored for this device type.',
+            'Instead of register addresses the device uses variables ("v00104" …): the module writes only the name of the variable to read into the request register and then reads the answer. It never writes a value, so the module stays read-only. Because of this the network search cannot detect these devices.',
+            'Fan speed in % goes into the contract field "fan flow" with the unit %; it is a speed, not an air flow in m³/h. Fault: the number of active errors (v01300) greater than 0. Filter: remaining time until the filter change (v01033) as a separate variable.',
+            'Not mapped: the read/write variable "filter change" (v01031) — the document does not say whether it is a warning or an acknowledgement — and the external CO2, VOC and humidity sensors. The contract fields filter warning and air quality stay empty.',
+            'Each variable needs two Modbus accesses, so a reading cycle takes a few seconds. Use a poll interval of at least 30 seconds.',
+        ];
+    }
+
+    /** „25.5“ → 25.5; „-“, leer oder Text → null (kein Sensor/ungültig). */
+    private static function parseNumber(?string $v): ?float
+    {
+        if ($v === null) {
+            return null;
+        }
+        $v = trim($v);
+        if ($v === '' || !preg_match('/^-?\d+(\.\d+)?$/', $v)) {
+            return null;
+        }
+        return (float)$v;
+    }
+
+    public function probe($mb): ?string
+    {
+        // Bewusst keine Suche: das Variablenprotokoll schreibt in ein Anforderungsregister, das die rein
+        // lesende Suche auf unbekannten Geräten nie anfasst.
+        return null;
+    }
+
+    public function readValues($mb, $hub): bool
+    {
+        if (!method_exists($mb, 'readVariable')) {
+            return false;
+        }
+        $get = function (array $var) use ($mb) {
+            return $mb->readVariable($var[0], $var[1]);
+        };
+
+        $ok = true;
+        $temps = [];
+        $failed = 0;
+        foreach (['outsideTemp' => self::VAR_OUTSIDE, 'supplyTemp' => self::VAR_SUPPLY, 'exhaustTemp' => self::VAR_EXHAUST, 'extractTemp' => self::VAR_EXTRACT] as $ident => $var) {
+            $raw = $get($var);
+            if ($raw === null) {
+                $ok = false;
+                if (++$failed >= 2 && count($temps) === 0) {
+                    return false; // stummes Gerät: den Zyklus nicht noch länger blockieren
+                }
+                continue;
+            }
+            $c = self::parseNumber($raw);
+            if ($c !== null && $c > -60.0 && $c < 9000.0) {
+                $temps[$ident] = $c;
+                $hub->SetVarFloat($ident, $c);
+            }
+        }
+        if (isset($temps['outsideTemp'], $temps['supplyTemp'], $temps['extractTemp'])) {
+            $hub->SetVarFloat('heatRecoveryEfficiency', RLT_Decode::heatRecoveryEfficiency($temps['outsideTemp'], $temps['supplyTemp'], $temps['extractTemp']));
+        }
+
+        // Alles Weitere ist Zusatz: Fehlt es, bleibt der Zyklus gültig.
+        $pct = self::parseNumber($get(self::VAR_PERCENT));
+        if ($pct !== null && $pct >= 0.0 && $pct <= 100.0) {
+            $hub->SetVarFloat('fan1Flow', $pct);
+        }
+        $stage = self::parseNumber($get(self::VAR_STAGE));
+        if ($stage !== null && $stage >= 0.0 && $stage <= 4.0) {
+            $hub->SetVarInteger('fanStage', (int)$stage);
+        }
+        $mode = self::parseNumber($get(self::VAR_MODE));
+        if ($mode !== null && ($mode === 0.0 || $mode === 1.0)) {
+            $hub->SetVarBoolean('manualMode', $mode === 1.0);
+        }
+        $errors = self::parseNumber($get(self::VAR_ERRORS));
+        if ($errors !== null && $errors >= 0.0 && $errors <= 32.0) {
+            $hub->SetVarBoolean('faultSummary', $errors > 0.0);
+        }
+        $filter = self::parseNumber($get(self::VAR_FILTER_MIN));
+        if ($filter !== null && $filter >= 0.0) {
+            $hub->SetVarFloat('filterHoursRemaining', round($filter / 60.0, 1));
+        }
+
+        return $ok;
+    }
+}
+
 class RLT_Drivers
 {
     public const DRIVERS = [
@@ -985,6 +1187,12 @@ class RLT_Drivers
             'caption'    => 'Proxon FWT 2.0 (Zimmermann)',
             'transports' => ['rtu'],
             'confidence' => 'Checked on a real FWT (21 September 2026): addresses, temperatures above 0 °C, fault 0, filter hours, operating mode. Still open: temperatures below 0 °C and the fault codes.',
+        ],
+        'helios_gateway' => [
+            'class'      => 'RLT_HeliosGatewayDriver',
+            'caption'    => 'Helios KWL easyControls (network gateway)',
+            'transports' => ['tcp'],
+            'confidence' => 'Based on the Helios document for the Modbus gateway (TCP port 502, unit ID 180, variable protocol), not yet checked on any device. Not found by the network search. Not mapped: filter warning, CO2/humidity sensors.',
         ],
         'helios_easycontrols' => [
             'class'      => 'RLT_HeliosEasyControlsDriver',

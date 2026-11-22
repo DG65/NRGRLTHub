@@ -16,7 +16,7 @@ class RLTHub extends IPSModule
     public const DEFAULT_DEVICE = 'robatherm_truecontrol';
     public const TRANSPORT = 'tcp';
 
-    public const NEWS_VERSION = '0.5.0';
+    public const NEWS_VERSION = '0.7.0';
     public const FORUM_THREAD_URL = 'https://community.symcon.de/t/modul-nrg-stack-rlthub-lueftungsanlagen-rlt-kwl-per-modbus-anbinden-robatherm-truecontrol-proxon-fwt/144442';
     public const LICENSE_URL = 'https://github.com/DG65/NRGRLTHub/blob/beta/LICENSE';
     public const PURPOSE = [
@@ -25,10 +25,8 @@ class RLTHub extends IPSModule
         'The module only reads — it does not control the system.',
     ];
     public const NEWS = [
-        '• 🌐 New: bilingual (German/English). The form, messages, variable names and notes now follow the Symcon language setting. Existing variables keep their names; new ones are created in the current language. Identifiers, settings and the contract with other modules are unchanged.',
-        '• 🔧 Archiving: new option "Record measured values in the archive" (default off). Until now the module switched recording on by itself every time you applied changes. Now you decide; the module never switches a recording off. Existing recordings stay as they are.',
-        '• 🆕 New device type: Pichler LG with ES2020 controller (e.g. LG 350) via Modbus TCP (firmware 1.6 or later; must be enabled on the device). Provides temperatures, calculated heat recovery efficiency, supply/extract air flow in m³/h, collective fault signal, filter alarm and time remaining until the filter change.',
-        '• ⚠️ Not yet checked on any Pichler system (address base, mapping of the fields). Details in the panel "Documentation & help". Test reports are welcome.',
+        '• 🆕 New device type: Helios KWL easyControls via the network gateway (Modbus TCP, fixed port 502 and unit ID 180). Provides outdoor, supply, extract and exhaust air temperature, calculated heat recovery efficiency, fan speed in %, fan stage, manual mode, collective fault signal and time remaining until the filter change. The module only reads: it writes just the name of the variable to read.',
+        '• ⚠️ Not yet checked on any Helios device (based on the Helios document for the gateway). The network search cannot find these devices; enter the IP address by hand. Details in the panel "Documentation & help". Test reports are welcome.',
     ];
 
     public function __construct($InstanceID)
@@ -125,15 +123,23 @@ class RLTHub extends IPSModule
     protected function rltConnectionTarget(): string
     {
         $host = trim((string)$this->ReadPropertyString('Host'));
-        return $host === '' ? '' : RLT_Text::t('%s:%d (unit ID %d)', $host, (int)$this->ReadPropertyInteger('Port'), (int)$this->ReadPropertyInteger('UnitId'));
+        [$port, $unitId] = $this->rltEffectiveConnection();
+        return $host === '' ? '' : RLT_Text::t('%s:%d (unit ID %d)', $host, $port, $unitId);
+    }
+
+    /** [Port, Unit-ID] — ein Gerätetyp kann sie fest vorgeben (Helios-Gateway: 502/180), sonst gelten die Formularwerte. */
+    private function rltEffectiveConnection(): array
+    {
+        $fixed = method_exists($this->rltDriver(), 'fixedConnection') ? $this->rltDriver()->fixedConnection() : [];
+        return [
+            (int)($fixed['port'] ?? $this->ReadPropertyInteger('Port')),
+            (int)($fixed['unitId'] ?? $this->ReadPropertyInteger('UnitId')),
+        ];
     }
 
     protected function rltClient(): RLT_ModbusClientInterface
     {
-        return new RLT_ModbusTcpClient(
-            (string)$this->ReadPropertyString('Host'),
-            (int)$this->ReadPropertyInteger('Port'),
-            (int)$this->ReadPropertyInteger('UnitId')
-        );
+        [$port, $unitId] = $this->rltEffectiveConnection();
+        return new RLT_ModbusTcpClient((string)$this->ReadPropertyString('Host'), $port, $unitId);
     }
 }
