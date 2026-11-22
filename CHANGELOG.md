@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.2 (22.11.2026)
+
+- **Vertrag `ventilation` 1.1 (SUITE.md, Fremdanbindung Punkt 1):** `RLT_GetFunctions`/`RLTGW_GetFunctions` melden sich jetzt selbst als `contractType` `'ventilation'` und tragen zusätzlich `Type` `'ventilation'` als Alias; `contractVersion` ist `'1.1'`. Bisher fehlten beide Felder, obwohl das README `Type=>'ventilation'` nannte. Rein additiv, alle bisherigen Felder und Variablen bleiben unverändert. Keine sichtbare Änderung für Nutzer, deshalb kein Eintrag im Neu-Panel.
+
 ## 0.5.1 (06.11.2026)
 
 - **Store-Review-Punkte 27 und 5 (SUITE.md):** Der Abgleich des Ausblende-Stands mit Geschwister-Instanzen läuft nicht mehr in `ApplyChanges()` (beim Neuladen von Modulen können die anderen Instanzen noch fehlen), sondern beim Öffnen des Formulars. Die eigenen Variablenprofile (`RLT.Ppm`, `RLT.Hours`, `RLT.Flow`) werden nur noch beim Anlegen eingestellt, nicht bei jedem Übernehmen. Keine sichtbare Änderung für Nutzer, deshalb kein Eintrag im Neu-Panel.

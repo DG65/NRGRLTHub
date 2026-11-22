@@ -364,7 +364,7 @@ $hubm->ReadValues();
 check('ReadValues schreibt in die echten Variablen (Reihenfolge Ident/Eltern-ID stimmt)', abs($hubm->varValue('outsideTemp') - 23.5) < 1e-9 && $hubm->varValue('faultSummary') === true && $hubm->varValue('co2') === 420.0);
 check('Status 102, lastSeenAt gesetzt', $hubm->status === 102 && $hubm->varValue('lastSeenAt') > 0 && $hubm->ReadAttributeInteger('LastSeenAt') > 0);
 $f = $hubm->GetFunctions()[0];
-check('Vertrag: contractVersion 1.0, alle Felder da', $f['contractVersion'] === '1.0' && count(array_intersect(['outsideTempID', 'supplyTempID', 'extractTempID', 'co2ID', 'heatRecoveryEfficiencyID', 'filterRuntimeHoursID', 'fan1FlowID', 'fan2FlowID', 'faultSummaryID', 'lastSeenAt', 'pollInterval', 'reachable', 'Caption', 'Measured', 'unit'], array_keys($f))) === 15);
+check('Vertrag: contractVersion 1.1, contractType und Type ventilation, alle Felder da', $f['contractVersion'] === '1.1' && $f['contractType'] === 'ventilation' && $f['Type'] === 'ventilation' && count(array_intersect(['outsideTempID', 'supplyTempID', 'extractTempID', 'co2ID', 'heatRecoveryEfficiencyID', 'filterRuntimeHoursID', 'fan1FlowID', 'fan2FlowID', 'faultSummaryID', 'lastSeenAt', 'pollInterval', 'reachable', 'Caption', 'Measured', 'unit'], array_keys($f))) === 15);
 check('Vertrag: IDs zeigen auf reale Variablen', $f['outsideTempID'] > 0 && $f['faultSummaryID'] > 0 && $f['co2ID'] > 0 && $f['reachable'] === true && $f['pollInterval'] === 60);
 check('Vertrag: kein watchdogOkID (SUITE.md)', !array_key_exists('watchdogOkID', $f) && !array_key_exists('faultUrgentID', $f));
 $hubm->mb = new FakeModbus();
@@ -409,6 +409,7 @@ $gwm->ReadValues();
 check('Zyklus über das Gateway liefert Werte (Funktionscodes 4/3, Adressen unverändert)', abs($gwm->varValue('outsideTemp') - 5.0) < 1e-9 && $gwm->varValue('filterRuntimeHours') === 321.0 && $gwm->status === 102);
 $gf = $gwm->GetFunctions()[0];
 check('Vertrag Proxon: co2ID/fan1FlowID/fan2FlowID = 0, Rest belegt', $gf['co2ID'] === 0 && $gf['fan1FlowID'] === 0 && $gf['fan2FlowID'] === 0 && $gf['outsideTempID'] > 0 && $gf['heatRecoveryEfficiencyID'] > 0 && $gf['faultSummaryID'] > 0);
+check('Vertrag über das Gateway: contractType und Type ventilation, contractVersion 1.1', $gf['contractType'] === 'ventilation' && $gf['Type'] === 'ventilation' && $gf['contractVersion'] === '1.1');
 check('WireAddress auto (Proxon): unverändert', $gwm->WireAddress(195) === 195);
 $gform = json_decode($gwm->GetConfigurationForm(), true);
 $gdev = null;
@@ -1088,7 +1089,7 @@ $wh->GetConfigurationForm(); $wh->ReadValues(); $wh->GetFunctions(); $wh->TestCo
 check('Stolperstein 24: Formular, Lesezyklus, Vertragsabfrage und Verbindungstest fragen Symcon nach dem ersten Mal nicht mehr nach Übersetzungen', $GLOBALS['RLT_TR_CALLS'] === 0, (string)$GLOBALS['RLT_TR_CALLS']);
 // Kennungen unverändert (Verbundvertrag, Instanzen verlieren nichts)
 $fnKeys = array_keys($wh->GetFunctions()[0]);
-check('Kennungen unverändert: Vertragsschlüssel Type=>ventilation 1.0 und Idents der Variablen', $fnKeys === ['contractVersion', 'instanceID', 'Caption', 'Measured', 'unit', 'reachable', 'outsideTempID', 'supplyTempID', 'extractTempID', 'co2ID', 'heatRecoveryEfficiencyID', 'filterRuntimeHoursID', 'fan1FlowID', 'fan2FlowID', 'faultSummaryID', 'lastSeenAt', 'pollInterval'] && $wh->hasVar('outsideTemp') && $wh->hasVar('heatRecoveryEfficiency') && $wh->hasVar('lastSeenAt'));
+check('Kennungen unverändert: Vertragsschlüssel Type=>ventilation 1.1 und Idents der Variablen', $fnKeys === ['contractVersion', 'contractType', 'Type', 'instanceID', 'Caption', 'Measured', 'unit', 'reachable', 'outsideTempID', 'supplyTempID', 'extractTempID', 'co2ID', 'heatRecoveryEfficiencyID', 'filterRuntimeHoursID', 'fan1FlowID', 'fan2FlowID', 'faultSummaryID', 'lastSeenAt', 'pollInterval'] && $wh->hasVar('outsideTemp') && $wh->hasVar('heatRecoveryEfficiency') && $wh->hasVar('lastSeenAt'));
 
 echo "\n" . ($fails === 0 ? "ALLE PRÜFUNGEN BESTANDEN\n" : "$fails PRÜFUNG(EN) FEHLGESCHLAGEN\n");
 exit($fails === 0 ? 0 : 1);

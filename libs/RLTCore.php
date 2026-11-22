@@ -1215,7 +1215,9 @@ trait RLT_HubTrait
         };
         $location = (string)$this->ReadPropertyString('Location');
         return [[
-            'contractVersion'          => '1.0',
+            'contractVersion'          => '1.1',
+            'contractType'             => 'ventilation',
+            'Type'                     => 'ventilation',
             'instanceID'               => $this->InstanceID,
             'Caption'                  => $location !== '' ? $location : IPS_GetName($this->InstanceID),
             'Measured'                 => true,
