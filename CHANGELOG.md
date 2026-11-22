@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0 (22.11.2026)
+
+- **Neuer Gerätetyp: Helios KWL easyControls 3.0 über Modbus RTU** (RLTHubGateway). Beauftragt, um die Nutzer des nicht mehr gepflegten Helios-Moduls aufzufangen; kein Code aus dem Altmodul (GPL-3.0), Neubau nach der Registerliste. Liefert Außen-, Zu-, Ab- und Fortlufttemperatur (Centi-Kelvin, Minusgrade möglich), berechneten Wirkungsgrad der Wärmerückgewinnung, Lüfterdrehzahl in % (Vertragsfeld `fan1FlowID`, `fanFlowUnit` `'%'`), Profil Zuhause/Abwesend sowie Bypass- und Abtaustatus. Alle Register sind Holding-Register (Funktion 3).
+- **Quelle und Grenzen:** Die Registerliste stammt aus einer Abschrift des Helios-Dokuments „Modbus RTU Functional and Interface Description“ (25 483-001, V01/0521) durch einen Dritten (TapHome); das Herstellerdokument selbst lag nicht vor. Adress-Basis ungeprüft (Vorgabe: Listennummer = Adresse am Gateway). Die Quelle kennt kein Störungs- und kein Filterregister, deshalb bleiben `faultSummaryID` und `filterWarningID` leer; CO2 und Feuchte sind nicht abgebildet (0 heißt „kein Sensor“). Das Helios-Netzwerk-Gateway (Modbus TCP, Port 502, Unit-ID 180) arbeitet laut Herstellerdokument mit Variablennamen statt Registeradressen und ist nicht abgedeckt.
+- Neu-Panel von RLTHubGateway zeigt die Neuerung (`NEWS_VERSION` 0.6.0). Prüfstand: neuer Block 4c (Treiber, Minusgrade, ungültige Rohwerte, Adress-Basis, Probe) und Integrationstest über das ModBus-Gateway.
+
 ## 0.5.3 (22.11.2026)
 
 - **Vertrag `ventilation` 1.1, neue Felder (SUITE.md, Feldregister vom 22.11.2026):** `filterWarningID` zeigt auf die Filterwechsel-Warnung (Pichler: `filterAlarm`; Robatherm und Proxon liefern keine, dort 0). `fanFlowUnit` nennt die Einheit der Volumenströme: `'%'` bei Robatherm, `'m3/h'` bei Pichler, leer bei Geräten ohne Volumenstrom (Proxon). Rein additiv, keine sichtbare Änderung für Nutzer, deshalb kein Eintrag im Neu-Panel.

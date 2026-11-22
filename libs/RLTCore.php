@@ -820,6 +820,151 @@ class RLT_PichlerLgDriver implements RLT_VentilationDriverInterface
     }
 }
 
+// ===========================================================================
+// RLT_HeliosEasyControlsDriver — Helios KWL easyControls 3.0, Modbus RTU
+// (RS485, Werk laut Quelle: Adresse 1, 19200 Baud, Parität gerade, 1 Stoppbit).
+//
+// Quelle: Transkription der Registertabelle des Helios-Dokuments „Modbus RTU
+// Functional and Interface Description", Nr. 25 483-001/-/V01/0521, auf
+// taphome.com (Drittquelle; das Herstellerdokument selbst lag nicht vor).
+// Alle Register sind Holding-Register (Function 3), 16 Bit ohne Vorzeichen.
+// Temperaturen in Centi-Kelvin: °C = Rohwert / 100 − 273,15 (Messbereich laut
+// Quelle 21000 … 33224).
+//
+// ⚠️ Noch an KEINEM Gerät geprüft, auch nicht gegen das Herstellerdokument.
+// Ungeprüft: Adress-Basis (die Quelle nennt Dezimaladressen ohne Hinweis, ob
+// es Adressen am Gateway sind; Vorgabe hier: Listennummer = Adresse am Gateway)
+// und ob dieselbe Tabelle auch über Modbus TCP gilt (das Netzwerk-Gateway von
+// Helios, Port 502/Adresse 180, arbeitet laut Herstellerdokument mit Variablen
+// statt Registeradressen und ist hier NICHT abgedeckt).
+//
+// Bewusste Lücken (die Quelle kennt dazu keine Register): Störung und Filter
+// (Warnung/Restzeit) → faultSummaryID/filterWarningID bleiben leer. CO2 und
+// Feuchte (0 = „kein Sensor“) sind nicht abgebildet, sonst stünde eine falsche
+// 0 ppm da. Die Lüfterdrehzahl in % geht auf fan1Flow (Einheit „%“), ist aber
+// eine Drehzahl und kein Volumenstrom in m³/h.
+// ===========================================================================
+class RLT_HeliosEasyControlsDriver implements RLT_VentilationDriverInterface
+{
+    private const HR_FAN_SPEED    = 4353;  // aktuelle Lüfterdrehzahl 0–100 %
+    private const HR_TEMPS        = 4354;  // 4354 Abluft, 4355 Fortluft, 4356 Außenluft
+    private const HR_TEMP_SUPPLY  = 4358;  // Zuluft
+    private const HR_STATE        = 4609;  // 0 = Home, 1 = Away
+    private const HR_CELL_STATE   = 4616;  // 0 WRG, 1 Kühlrückgewinnung, 2 Bypass, 3 Abtauen
+    private const CK_MIN          = 21000;
+    private const CK_MAX          = 33224;
+
+    public function addressOneBasedDefault(): bool
+    {
+        return false;
+    }
+
+    public function getBaseVars(): array
+    {
+        return [
+            ['outsideTemp',            'Outdoor air temperature',          'F', 'NRG.Celsius', true],
+            ['supplyTemp',             'Supply air temperature',           'F', 'NRG.Celsius', true],
+            ['extractTemp',            'Extract air temperature',          'F', 'NRG.Celsius', true],
+            ['exhaustTemp',            'Exhaust air temperature',          'F', 'NRG.Celsius', true],
+            ['heatRecoveryEfficiency', 'Heat recovery efficiency (calculated)', 'F', 'NRG.Percent', true],
+            ['fan1Flow',               'Fan speed',                        'F', 'NRG.Percent', true],
+            ['awayMode',               'Away profile active',              'B', '',            false],
+            ['bypassOpen',             'Bypass open',                      'B', '',            false],
+            ['defrost',                'Defrost active',                   'B', '',            false],
+        ];
+    }
+
+    public function getNotes(): array
+    {
+        return [
+            'Helios KWL easyControls 3.0: register list from a third-party transcription (TapHome) of the Helios document "Modbus RTU Functional and Interface Description" (25 483-001, V01/0521), not checked against the manufacturer document or on any device. Modbus RTU over RS485 (factory setting according to that source: slave address 1, 19200 baud, even parity, 1 stop bit) via RLTHubGateway; all registers are holding registers (function 3).',
+            'Temperatures: raw value in centi-Kelvin, °C = raw ÷ 100 − 273.15; values outside the sensor range 21000 … 33224 are ignored. The address base is unchecked: the source gives decimal addresses without saying whether they are wire addresses. Default: list number = wire address; on zero values or errors try the other choice under "Use a custom address base instead".',
+            'Fan speed: the unit reports the current fan speed in % (0–100). It is passed on to the contract field "fan flow" with the unit %, but it is a speed, not an air flow in m³/h.',
+            'The Home/Away profile, the bypass and the defrost state are available as separate variables. The source documents no fault register and no filter status, so the contract fields fault and filter stay empty. CO2 and humidity are not mapped (0 means "no sensor" in the source).',
+            'The Helios network gateway (Modbus TCP, port 502, unit ID 180) works with variable names instead of register addresses and is not covered by this device type.',
+        ];
+    }
+
+    /** Centi-Kelvin → °C; null = außerhalb des Messbereichs (kein Sensor/Fehler). */
+    private static function ckToCelsius(int $raw): ?float
+    {
+        $raw &= 0xFFFF;
+        if ($raw < self::CK_MIN || $raw > self::CK_MAX) {
+            return null;
+        }
+        return $raw / 100.0 - 273.15;
+    }
+
+    public function probe($mb): ?string
+    {
+        $addr = new RLT_ProbeAddress(false);
+        $t = $mb->readHolding($addr->wire(self::HR_TEMPS), 3);
+        $s = $mb->readHolding($addr->wire(self::HR_TEMP_SUPPLY), 1);
+        if ($t === null || count($t) < 3 || $s === null || !isset($s[0])) {
+            return null;
+        }
+        $extract = self::ckToCelsius($t[0]);
+        $outside = self::ckToCelsius($t[2]);
+        $supply  = self::ckToCelsius($s[0]);
+        if ($extract === null || $outside === null || $supply === null) {
+            return null;
+        }
+        if ($extract == $outside && $outside == $supply) {
+            return null;
+        }
+        return RLT_Text::t('Outdoor air %s °C, supply air %s °C, extract air %s °C', RLT_Text::number($outside), RLT_Text::number($supply), RLT_Text::number($extract));
+    }
+
+    public function readValues($mb, $hub): bool
+    {
+        $ok = true;
+        $temps = [];
+
+        $t = $mb->readHolding($hub->WireAddress(self::HR_TEMPS), 3);
+        if ($t !== null && count($t) >= 3) {
+            foreach (['extractTemp' => $t[0], 'exhaustTemp' => $t[1], 'outsideTemp' => $t[2]] as $ident => $raw) {
+                $c = self::ckToCelsius($raw);
+                if ($c !== null) {
+                    $temps[$ident] = $c;
+                    $hub->SetVarFloat($ident, $c);
+                }
+            }
+        } else {
+            $ok = false;
+        }
+        $s = $mb->readHolding($hub->WireAddress(self::HR_TEMP_SUPPLY), 1);
+        if ($s !== null && isset($s[0])) {
+            $c = self::ckToCelsius($s[0]);
+            if ($c !== null) {
+                $temps['supplyTemp'] = $c;
+                $hub->SetVarFloat('supplyTemp', $c);
+            }
+        } else {
+            $ok = false;
+        }
+        if (isset($temps['outsideTemp'], $temps['supplyTemp'], $temps['extractTemp'])) {
+            $hub->SetVarFloat('heatRecoveryEfficiency', RLT_Decode::heatRecoveryEfficiency($temps['outsideTemp'], $temps['supplyTemp'], $temps['extractTemp']));
+        }
+
+        // Alles Weitere ist Zusatz: Fehlt es, bleibt der Zyklus gültig.
+        $fan = $mb->readHolding($hub->WireAddress(self::HR_FAN_SPEED), 1);
+        if ($fan !== null && isset($fan[0]) && ($fan[0] & 0xFFFF) <= 100) {
+            $hub->SetVarFloat('fan1Flow', (float)($fan[0] & 0xFFFF));
+        }
+        $state = $mb->readHolding($hub->WireAddress(self::HR_STATE), 1);
+        if ($state !== null && isset($state[0])) {
+            $hub->SetVarBoolean('awayMode', ($state[0] & 0xFFFF) === 1);
+        }
+        $cell = $mb->readHolding($hub->WireAddress(self::HR_CELL_STATE), 1);
+        if ($cell !== null && isset($cell[0]) && ($cell[0] & 0xFFFF) <= 3) {
+            $hub->SetVarBoolean('bypassOpen', ($cell[0] & 0xFFFF) === 2);
+            $hub->SetVarBoolean('defrost', ($cell[0] & 0xFFFF) === 3);
+        }
+
+        return $ok;
+    }
+}
+
 class RLT_Drivers
 {
     public const DRIVERS = [
@@ -840,6 +985,12 @@ class RLT_Drivers
             'caption'    => 'Proxon FWT 2.0 (Zimmermann)',
             'transports' => ['rtu'],
             'confidence' => 'Checked on a real FWT (21 September 2026): addresses, temperatures above 0 °C, fault 0, filter hours, operating mode. Still open: temperatures below 0 °C and the fault codes.',
+        ],
+        'helios_easycontrols' => [
+            'class'      => 'RLT_HeliosEasyControlsDriver',
+            'caption'    => 'Helios KWL easyControls 3.0',
+            'transports' => ['rtu'],
+            'confidence' => 'Register list from a third-party transcription of the Helios document (easyControls 3.0, Modbus RTU), not yet verified against the manufacturer document or on hardware. Not covered: network gateway (Modbus TCP), fault and filter status.',
         ],
     ];
 

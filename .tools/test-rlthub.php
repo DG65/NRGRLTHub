@@ -342,6 +342,48 @@ $notes = implode(' ', array_map([RLT_Text::class, 't'], (new RLT_ProxonFwtDriver
 check("Vertrauensangabe FWT nennt die echte Prüfung UND die offenen Punkte (Minusgrade, Störungscodes)", strpos($conf, '21.09.2026') !== false && strpos($conf, 'unter 0 °C') !== false && strpos($conf, 'Störungscodes') !== false && strpos($notes, 'Annahme') !== false);
 check("Robatherm bleibt ehrlich als ungeprüft gekennzeichnet", strpos(RLT_Text::t(RLT_Drivers::DRIVERS['robatherm_truecontrol']['confidence']), 'noch nicht an Hardware verifiziert') !== false);
 
+echo "4c) Helios KWL easyControls 3.0 (Holding FC3, Centi-Kelvin, Registerliste aus Drittquelle)\n";
+$hd = new RLT_HeliosEasyControlsDriver();
+$hm = new FakeModbus();
+$hm->holding[4353] = [40];                       // Lüfterdrehzahl 40 %
+$hm->holding[4354] = [29615, 28315, 27815];      // Abluft 23 °C, Fortluft 10 °C, Außenluft 5 °C
+$hm->holding[4358] = [29315];                    // Zuluft 20 °C
+$hm->holding[4609] = [1];                        // Away
+$hm->holding[4616] = [2];                        // Bypass
+$hh = new FakeHub(false);
+check('Helios: Zyklus ok', $hd->readValues($hm, $hh) === true);
+check('Helios: Centi-Kelvin -> °C (Außen 5, Zu 20, Ab 23, Fort 10)', abs($hh->vars['outsideTemp'] - 5.0) < 1e-9 && abs($hh->vars['supplyTemp'] - 20.0) < 1e-9 && abs($hh->vars['extractTemp'] - 23.0) < 1e-9 && abs($hh->vars['exhaustTemp'] - 10.0) < 1e-9, json_encode($hh->vars));
+check('Helios: Wirkungsgrad (20-5)/(23-5) = 83,3 %', abs($hh->vars['heatRecoveryEfficiency'] - 83.3333) < 0.01, (string)$hh->vars['heatRecoveryEfficiency']);
+check('Helios: Drehzahl 40 %, Away, Bypass offen, kein Abtauen', $hh->vars['fan1Flow'] === 40.0 && $hh->vars['awayMode'] === true && $hh->vars['bypassOpen'] === true && $hh->vars['defrost'] === false);
+check('Helios: nur Holding-Register (FC3) an den Listenadressen', count(array_filter($hm->calls, fn($c) => $c[0] !== 'holding')) === 0 && in_array(['holding', 4354], $hm->calls, true) && in_array(['holding', 4616], $hm->calls, true), json_encode($hm->calls));
+$hm2 = new FakeModbus();
+$hm2->holding[4354] = [29615, 28315, 26815]; $hm2->holding[4358] = [29315]; // Außenluft -5 °C
+$hh2 = new FakeHub(false);
+$hd->readValues($hm2, $hh2);
+check('Helios: Minusgrade (26815 = -5 °C)', abs($hh2->vars['outsideTemp'] + 5.0) < 1e-9);
+$hm3 = new FakeModbus();
+$hm3->holding[4354] = [29615, 28315, 0]; $hm3->holding[4358] = [29315];     // Außenfühler fehlt (Rohwert 0)
+$hh3 = new FakeHub(false);
+check('Helios: Rohwert außerhalb des Messbereichs wird nicht geschrieben, Zyklus bleibt gültig', $hd->readValues($hm3, $hh3) === true && !isset($hh3->vars['outsideTemp']) && !isset($hh3->vars['heatRecoveryEfficiency']) && isset($hh3->vars['supplyTemp']));
+$hm4 = new FakeModbus();
+$hh4 = new FakeHub(false);
+check('Helios: fehlende Pflichtregister -> Zyklus meldet Fehler, nichts geschrieben', $hd->readValues($hm4, $hh4) === false && $hh4->vars === []);
+$hm5 = new FakeModbus();
+$hm5->holding[4353] = [150]; $hm5->holding[4616] = [9]; $hm5->holding[4354] = [29615, 28315, 27815]; $hm5->holding[4358] = [29315];
+$hh5 = new FakeHub(false);
+$hd->readValues($hm5, $hh5);
+check('Helios: Drehzahl über 100 % und Zellenstatus über 3 werden verworfen', !isset($hh5->vars['fan1Flow']) && !isset($hh5->vars['bypassOpen']));
+$hm6 = new FakeModbus(); $hm6->holding[4353] = [40]; $hm6->holding[4354] = [29615, 28315, 27815]; $hm6->holding[4358] = [29315];
+$hd->readValues($hm6, new FakeHub(true));
+check('Helios: Adress-Basis „1-basiert“ rechnet um (Drehzahl 4353 -> 4352, Profil 4609 -> 4608, Zuluft 4358 -> 4357)', in_array(['holding', 4352], $hm6->calls, true) && in_array(['holding', 4608], $hm6->calls, true) && in_array(['holding', 4357], $hm6->calls, true) && !in_array(['holding', 4609], $hm6->calls, true) && !in_array(['holding', 4358], $hm6->calls, true), json_encode($hm6->calls));
+check('Helios probe: plausible Temperaturen erkannt, nur Nullen kein Fund', $hd->probe($hm) !== null && $hd->probe((function () { $m = new FakeModbus(); $m->holding[4354] = [0, 0, 0]; $m->holding[4358] = [0]; return $m; })()) === null);
+$hv = array_column($hd->getBaseVars(), 0);
+check('Helios: keine Variablen für Störung, Filter, CO2 (Quelle kennt keine Register)', !in_array('faultSummary', $hv, true) && !in_array('filterAlarm', $hv, true) && !in_array('co2', $hv, true) && !in_array('filterRuntimeHours', $hv, true));
+check('Helios: Gerätetyp nur über RTU (RLTHubGateway)', RLT_Drivers::DRIVERS['helios_easycontrols']['transports'] === ['rtu']);
+$hnotes = implode(' ', array_map([RLT_Text::class, 't'], $hd->getNotes()));
+check('Helios: Hinweise nennen Drittquelle, ungeprüfte Adress-Basis, Drehzahl statt Volumenstrom, fehlende Störung/Filter und das nicht abgedeckte Netzwerk-Gateway', strpos($hnotes, 'Abschrift') !== false && strpos($hnotes, 'Adress-Basis') !== false && strpos($hnotes, 'Drehzahl') !== false && strpos($hnotes, 'Störungsregister') !== false && strpos($hnotes, 'Netzwerk-Gateway') !== false);
+check('Helios: Vertrauensangabe nennt Drittquelle und fehlende Verifikation', strpos(RLT_Text::t(RLT_Drivers::DRIVERS['helios_easycontrols']['confidence']), 'Dritten') !== false && strpos(RLT_Text::t(RLT_Drivers::DRIVERS['helios_easycontrols']['confidence']), 'noch nicht') !== false);
+
 echo "5) RLTHub (TCP) gegen den IPSModule-Nachbau: Variablen, Zyklus, Vertrag, Formular\n";
 class TestHub extends RLTHub
 {
@@ -416,7 +458,7 @@ check('WireAddress auto (Proxon): unverändert', $gwm->WireAddress(195) === 195)
 $gform = json_decode($gwm->GetConfigurationForm(), true);
 $gdev = null;
 foreach ($gform['elements'] as $e) { if (($e['name'] ?? '') === 'Device') { $gdev = array_column($e['options'], 'value'); } }
-check('Formular: Gateway-Modul bietet nur RTU-Treiber an', $gdev === ['pichler_lg', 'proxon_fwt'], json_encode($gdev));
+check('Formular: Gateway-Modul bietet nur RTU-Treiber an', $gdev === ['pichler_lg', 'proxon_fwt', 'helios_easycontrols'], json_encode($gdev));
 check('module.json: Parent- und Kind-GUID wie im Vorbild (WPModbusHubGateway)', (function () {
     $j = json_decode(file_get_contents(dirname(__DIR__) . '/RLTHubGateway/module.json'), true);
     return $j['parentRequirements'] === ['{E310B701-4AE7-458E-B618-EC13A1A6F6A8}'] && $j['implemented'] === ['{77B31ABB-18FA-4B91-BB63-E5B2AB5588F4}'] && $j['prefix'] === 'RLTGW';
@@ -878,6 +920,23 @@ $pg->parentFn = function (string $json) {
 };
 $pg->ReadValues();
 check("Pichler über RLTHubGateway (RTU, ModBus-Gateway, Function 4): Werte und Status 102", abs($pg->varValue('supplyTemp') - 20.1) < 1e-9 && $pg->varValue('fan2Flow') === 305.0 && $pg->status === 102);
+$hg = new TestGw(995); $hg->Create(); $hg->props['Device'] = 'helios_easycontrols';
+$GLOBALS['RLT_INSTANCES'][995] = ['ConnectionID' => 996];
+$GLOBALS['RLT_INSTANCES'][996] = ['module' => '{A5F663AB-C400-4FE5-B207-4D67CC030564}', 'props' => ['DeviceID' => 1]];
+$hg->ApplyChanges();
+$hg->parentFn = function (string $json) {
+    $r = json_decode($json, true);
+    if ($r['Function'] !== 3) { return false; }
+    $map = [4353 => [40], 4354 => [29615, 28315, 27815], 4358 => [29315], 4609 => [0], 4616 => [3]];
+    if (!isset($map[$r['Address']])) { return false; }
+    $data = '';
+    foreach ($map[$r['Address']] as $v) { $data .= pack('n', $v); }
+    return "\x03" . chr(strlen($data)) . $data;
+};
+$hg->ReadValues();
+check("Helios über RLTHubGateway (RTU, ModBus-Gateway, Function 3): Werte und Status 102", abs($hg->varValue('outsideTemp') - 5.0) < 1e-9 && $hg->varValue('fan1Flow') === 40.0 && $hg->varValue('defrost') === true && $hg->status === 102, json_encode([$hg->varValue('outsideTemp'), $hg->varValue('fan1Flow'), $hg->status]));
+$hgf = $hg->GetFunctions()[0];
+check("Helios-Vertrag: fanFlowUnit %, Temperaturen und Drehzahl belegt, Störung/Filter/CO2 leer", $hgf['fanFlowUnit'] === '%' && $hgf['fan1FlowID'] > 0 && $hgf['outsideTemp' . 'ID'] > 0 && $hgf['faultSummaryID'] === 0 && $hgf['filterWarningID'] === 0 && $hgf['filterRuntimeHoursID'] === 0 && $hgf['co2ID'] === 0 && $hgf['fan2FlowID'] === 0);
 unset($GLOBALS['RLT_INSTANCES'][991], $GLOBALS['RLT_INSTANCES'][992]);
 
 // Netzwerksuche erkennt ein Pichler-Gerät (Function 4: Modell 0 = LG 350, plausible Temperaturen)

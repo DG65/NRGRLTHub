@@ -23,7 +23,7 @@ class RLTHubGateway extends IPSModule
     public const DEFAULT_DEVICE = 'proxon_fwt';
     public const TRANSPORT = 'rtu';
 
-    public const NEWS_VERSION = '0.5.0';
+    public const NEWS_VERSION = '0.6.0';
     public const FORUM_THREAD_URL = 'https://community.symcon.de/t/modul-nrg-stack-rlthub-lueftungsanlagen-rlt-kwl-per-modbus-anbinden-robatherm-truecontrol-proxon-fwt/144442';
     public const LICENSE_URL = 'https://github.com/DG65/NRGRLTHub/blob/beta/LICENSE';
     public const PURPOSE = [
@@ -32,10 +32,8 @@ class RLTHubGateway extends IPSModule
         'The module only reads — it does not control the system.',
     ];
     public const NEWS = [
-        '• 🌐 New: bilingual (German/English). The form, messages, variable names and notes now follow the Symcon language setting. Existing variables keep their names; new ones are created in the current language. Identifiers, settings and the contract with other modules are unchanged.',
-        '• 🔧 Archiving: new option "Record measured values in the archive" (default off). Until now the module switched recording on by itself every time you applied changes. Now you decide; the module never switches a recording off. Existing recordings stay as they are.',
-        '• 🆕 New device type: Pichler LG with ES2020 controller (e.g. LG 350) via Modbus RTU (factory setting: 19200 baud, even parity, slave address 20). Provides temperatures, calculated heat recovery efficiency, supply/extract air flow in m³/h, collective fault signal, filter alarm and time remaining until the filter change.',
-        '• ⚠️ Not yet checked on any Pichler system (address base, mapping of the fields). Details in the panel "Documentation & help". Test reports are welcome.',
+        '• 🆕 New device type: Helios KWL easyControls 3.0 via Modbus RTU (factory setting according to the register list: slave address 1, 19200 baud, even parity). Provides outdoor, supply, extract and exhaust air temperature, calculated heat recovery efficiency, fan speed in %, Home/Away profile, bypass and defrost state.',
+        '• ⚠️ Not yet checked on any Helios device, and the register list comes from a third-party transcription of the Helios document. The source documents no fault or filter status, so those stay empty. The Helios network gateway (Modbus TCP) is not covered. Details in the panel "Documentation & help". Test reports are welcome.',
     ];
 
     public function __construct($InstanceID)
