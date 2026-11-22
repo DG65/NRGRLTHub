@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.3 (22.11.2026)
+
+- **Vertrag `ventilation` 1.1, neue Felder (SUITE.md, Feldregister vom 22.11.2026):** `filterWarningID` zeigt auf die Filterwechsel-Warnung (Pichler: `filterAlarm`; Robatherm und Proxon liefern keine, dort 0). `fanFlowUnit` nennt die Einheit der Volumenströme: `'%'` bei Robatherm, `'m3/h'` bei Pichler, leer bei Geräten ohne Volumenstrom (Proxon). Rein additiv, keine sichtbare Änderung für Nutzer, deshalb kein Eintrag im Neu-Panel.
+
 ## 0.5.2 (22.11.2026)
 
 - **Vertrag `ventilation` 1.1 (SUITE.md, Fremdanbindung Punkt 1):** `RLT_GetFunctions`/`RLTGW_GetFunctions` melden sich jetzt selbst als `contractType` `'ventilation'` und tragen zusätzlich `Type` `'ventilation'` als Alias; `contractVersion` ist `'1.1'`. Bisher fehlten beide Felder, obwohl das README `Type=>'ventilation'` nannte. Rein additiv, alle bisherigen Felder und Variablen bleiben unverändert. Keine sichtbare Änderung für Nutzer, deshalb kein Eintrag im Neu-Panel.

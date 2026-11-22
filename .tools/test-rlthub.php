@@ -366,6 +366,7 @@ check('Status 102, lastSeenAt gesetzt', $hubm->status === 102 && $hubm->varValue
 $f = $hubm->GetFunctions()[0];
 check('Vertrag: contractVersion 1.1, contractType und Type ventilation, alle Felder da', $f['contractVersion'] === '1.1' && $f['contractType'] === 'ventilation' && $f['Type'] === 'ventilation' && count(array_intersect(['outsideTempID', 'supplyTempID', 'extractTempID', 'co2ID', 'heatRecoveryEfficiencyID', 'filterRuntimeHoursID', 'fan1FlowID', 'fan2FlowID', 'faultSummaryID', 'lastSeenAt', 'pollInterval', 'reachable', 'Caption', 'Measured', 'unit'], array_keys($f))) === 15);
 check('Vertrag: IDs zeigen auf reale Variablen', $f['outsideTempID'] > 0 && $f['faultSummaryID'] > 0 && $f['co2ID'] > 0 && $f['reachable'] === true && $f['pollInterval'] === 60);
+check('Vertrag 1.1 Robatherm: fanFlowUnit % (Profil NRG.Percent), filterWarningID 0 (Gerät liefert keinen Filteralarm)', $f['fanFlowUnit'] === '%' && $f['filterWarningID'] === 0);
 check('Vertrag: kein watchdogOkID (SUITE.md)', !array_key_exists('watchdogOkID', $f) && !array_key_exists('faultUrgentID', $f));
 $hubm->mb = new FakeModbus();
 $hubm->ReadValues();
@@ -409,6 +410,7 @@ $gwm->ReadValues();
 check('Zyklus über das Gateway liefert Werte (Funktionscodes 4/3, Adressen unverändert)', abs($gwm->varValue('outsideTemp') - 5.0) < 1e-9 && $gwm->varValue('filterRuntimeHours') === 321.0 && $gwm->status === 102);
 $gf = $gwm->GetFunctions()[0];
 check('Vertrag Proxon: co2ID/fan1FlowID/fan2FlowID = 0, Rest belegt', $gf['co2ID'] === 0 && $gf['fan1FlowID'] === 0 && $gf['fan2FlowID'] === 0 && $gf['outsideTempID'] > 0 && $gf['heatRecoveryEfficiencyID'] > 0 && $gf['faultSummaryID'] > 0);
+check('Vertrag 1.1 Proxon: fanFlowUnit leer (keine Volumenströme), filterWarningID 0', $gf['fanFlowUnit'] === '' && $gf['filterWarningID'] === 0);
 check('Vertrag über das Gateway: contractType und Type ventilation, contractVersion 1.1', $gf['contractType'] === 'ventilation' && $gf['Type'] === 'ventilation' && $gf['contractVersion'] === '1.1');
 check('WireAddress auto (Proxon): unverändert', $gwm->WireAddress(195) === 195);
 $gform = json_decode($gwm->GetConfigurationForm(), true);
@@ -856,6 +858,7 @@ $ph = new TestHub(990); $ph->Create(); $ph->props['Host'] = '192.0.2.77'; $ph->p
 $ph->mb = $pm;
 $ph->ReadValues();
 $pf2 = $ph->GetFunctions()[0];
+check("Pichler-Vertrag 1.1: filterWarningID zeigt auf die Filteralarm-Variable, fanFlowUnit m3/h", $pf2['filterWarningID'] > 0 && $pf2['filterWarningID'] === (function () use ($ph) { foreach ($GLOBALS['RLT_OBJ'] as $id => $o) { if ($o['ident'] === 'filterAlarm') { return $id; } } return -1; })() && $pf2['fanFlowUnit'] === 'm3/h');
 check("Pichler-Vertrag: filterRuntimeHoursID/co2ID leer, Volumenstrom + Störung + Temperaturen belegt, unit leer", $pf2['filterRuntimeHoursID'] === 0 && $pf2['co2ID'] === 0 && $pf2['fan1FlowID'] > 0 && $pf2['fan2FlowID'] > 0 && $pf2['faultSummaryID'] > 0 && $pf2['outsideTempID'] > 0 && $pf2['unit'] === '', json_encode($pf2));
 check("Pichler über RLTHub (TCP): Variablen gefüllt, Status 102, Vertrag reachable", abs($ph->varValue('outsideTemp') - 12.3) < 1e-9 && $ph->varValue('fan1Flow') === 320.0 && $ph->status === 102 && $pf2['reachable'] === true);
 check("Pichler: Profil m³/h für den Volumenstrom angelegt", isset($GLOBALS['RLT_PROFILES']['RLT.Flow']) && $GLOBALS['RLT_PROFILES']['RLT.Flow']['suffix'] === ' m³/h');
@@ -1089,7 +1092,7 @@ $wh->GetConfigurationForm(); $wh->ReadValues(); $wh->GetFunctions(); $wh->TestCo
 check('Stolperstein 24: Formular, Lesezyklus, Vertragsabfrage und Verbindungstest fragen Symcon nach dem ersten Mal nicht mehr nach Übersetzungen', $GLOBALS['RLT_TR_CALLS'] === 0, (string)$GLOBALS['RLT_TR_CALLS']);
 // Kennungen unverändert (Verbundvertrag, Instanzen verlieren nichts)
 $fnKeys = array_keys($wh->GetFunctions()[0]);
-check('Kennungen unverändert: Vertragsschlüssel Type=>ventilation 1.1 und Idents der Variablen', $fnKeys === ['contractVersion', 'contractType', 'Type', 'instanceID', 'Caption', 'Measured', 'unit', 'reachable', 'outsideTempID', 'supplyTempID', 'extractTempID', 'co2ID', 'heatRecoveryEfficiencyID', 'filterRuntimeHoursID', 'fan1FlowID', 'fan2FlowID', 'faultSummaryID', 'lastSeenAt', 'pollInterval'] && $wh->hasVar('outsideTemp') && $wh->hasVar('heatRecoveryEfficiency') && $wh->hasVar('lastSeenAt'));
+check('Kennungen unverändert: Vertragsschlüssel Type=>ventilation 1.1 und Idents der Variablen', $fnKeys === ['contractVersion', 'contractType', 'Type', 'instanceID', 'Caption', 'Measured', 'unit', 'reachable', 'outsideTempID', 'supplyTempID', 'extractTempID', 'co2ID', 'heatRecoveryEfficiencyID', 'filterRuntimeHoursID', 'filterWarningID', 'fan1FlowID', 'fan2FlowID', 'fanFlowUnit', 'faultSummaryID', 'lastSeenAt', 'pollInterval'] && $wh->hasVar('outsideTemp') && $wh->hasVar('heatRecoveryEfficiency') && $wh->hasVar('lastSeenAt'));
 
 echo "\n" . ($fails === 0 ? "ALLE PRÜFUNGEN BESTANDEN\n" : "$fails PRÜFUNG(EN) FEHLGESCHLAGEN\n");
 exit($fails === 0 ? 0 : 1);

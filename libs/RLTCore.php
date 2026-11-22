@@ -1229,12 +1229,30 @@ trait RLT_HubTrait
             'co2ID'                    => $id('co2'),
             'heatRecoveryEfficiencyID' => $id('heatRecoveryEfficiency'),
             'filterRuntimeHoursID'     => $id('filterRuntimeHours'),
+            'filterWarningID'          => $id('filterAlarm'),
             'fan1FlowID'               => $id('fan1Flow'),
             'fan2FlowID'               => $id('fan2Flow'),
+            'fanFlowUnit'              => $this->rltFanFlowUnit(),
             'faultSummaryID'           => $id('faultSummary'),
             'lastSeenAt'               => (int)$this->ReadAttributeInteger('LastSeenAt'),
             'pollInterval'             => (int)$this->ReadPropertyInteger('PollInterval'),
         ]];
+    }
+
+    /** Einheit der Volumenstrom-Variablen für den Vertrag (SUITE.md ventilation 1.1): 'm3/h', '%' oder '' (unbekannt). */
+    private function rltFanFlowUnit(): string
+    {
+        foreach ($this->rltDriver()->getBaseVars() as $def) {
+            if ($def[0] === 'fan1Flow' || $def[0] === 'fan2Flow') {
+                if ($def[3] === 'RLT.Flow') {
+                    return 'm3/h';
+                }
+                if ($def[3] === 'NRG.Percent') {
+                    return '%';
+                }
+            }
+        }
+        return '';
     }
 
     // -----------------------------------------------------------------------
